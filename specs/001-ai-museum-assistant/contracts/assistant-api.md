@@ -53,7 +53,7 @@ already exposes — the assistant has no visitor authentication per FR-010).
 |---|---|---|
 | `400` | Missing/invalid `message`, `language`, or `sessionId` | `{ "error": "invalid_request", "message": "<detail>" }` |
 | `502` | The AI provider call failed, errored, or the response couldn't be parsed into the expected structured shape | `{ "error": "assistant_unavailable" }` |
-| `504` | The AI provider call exceeded the ~6s server-side timeout | `{ "error": "assistant_unavailable" }` |
+| `504` | The AI provider call exceeded the ~20s server-side timeout | `{ "error": "assistant_unavailable" }` |
 
 The client (`AssistantHandler.js`) treats every non-`200` the same way: show the
 "service unavailable" message (Edge Cases) and do not add a broken assistant
