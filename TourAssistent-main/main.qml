@@ -256,6 +256,8 @@ ApplicationWindow  {
         }
     }
 
+
+
     // --- INTERFACE ---
     Column {
         id: col

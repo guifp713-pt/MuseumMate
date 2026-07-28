@@ -80,3 +80,16 @@ Notas
 -Estudar conceitos de SOLID, Domain-Driven Design, Arquiecture Software, Arquiecture de design, Redes.
 
 ========================================================================================================================================
+
+
+Mudancas na visao treinador
+Adiciona o botao de utilizar o ultimo 11 que tem objetivo de  verificar o ultimo 11 usado no ultimo jogo e autocompleta as posicoes com o utilmo onze.Restricoes do sistema. O modo jogo so pode ser iniciado se a convocatoria e o onze ja estiverem concluidos. No modo jogo nao consigo aumentar o resultado do adversario, eu quero conseguir aumentar e diminuir os golos do adversario e como foi o golo, se foi Jogada normal,  livre, cantos, penalti, autogolo e se for autogolo escolher o jogador que fez autogolo.   Remove a opcao de escolher a posse de bola. No modo jogo tens a opcao de fazer reset, porem  caso o treinador clicar ai sem querer tem que haever uma forma de restaurar o que tava antes, por isso antes de fazer reset armazena as informacoes, tudo , golos, cantos, amarelos todas as estatisticas do modo jogo e  quando clicar em reset deve guardar e depois desaparecer tudo mas se caso queria voltar onde estava antes deve ser possivel. No modo jogo tambem deve dar para finalizar primeira parte e depois aparece botao de retornar ao jogo e depois aparece botao para finalizar jogo.
+Nos treinos deve ter uma opcao de personalizar os treinos automaticos, ou seja o treinador escolhe os dias que acontece os treinos na semana e depois de pre selecionar os dias que acontecem os treinos na semana e depois se ele quiser em vez de ter que criar sempre os treinos todos os dias que tem treino o sistema tem uma opcoa para enviar treinos da semana e cria logo os treinos pre selecionados para cada dia.
+Qunado crio o treino agora ele já esta marcando automaticamente como os jogadores presentes. Porem qunado crio nao deve mostrar como presentes logo. Deve mostrar como nada demarcado e depois ou o treinador preenche ou os jogadores conseguem dizer se vão ou nao e se nao aparece para dizer justificativa e depois no painel do treinador é possivel ver.
+Depois do treinador criar o jogo deve ser possivel excluir jogo e quando for criar jogo deve ser possivel mencionar logo o horario da concentracao.
+Quero que removas o botao de Jogo parte debaixo da bar e troques pela opcao estatisticas que atualmente está em mais. E no menu principal se depois do treinador criar jogo, enviar convocatoria escolher onze no menu principal em vez de aparecer Preparar Jogo deve aparecer Iniciar Jogo e ai passa para o modo jogo
+Nas criacao de logisticas na parte do jogo deve ser possivel adicionar limites de pessoas para que depois quando os jogadores escolheres a opcao de preciso de boleia e escolherem qual das logisticas vao escolher tem que verificar se ja passou ou nao.
+Mudancas Jogador
+-Quando jogador clica em confirmar presenca o sistema nao deve adotar que ele vai automaticamente, abaixo de Como vais para o jogo deve ter mais uma opcao dizendo "Nao vou".
+-Deve ser possivel confirmar presenca no treino.
+-Quando for escolher como vai para o jogo caso clique em Preciso de boleia ele deve poder conseguir ver quais as logisticas atuais e escolher com quem vai e so deixa marcar que vai de boleia com algumas das logisticas se não tiver cheio.
