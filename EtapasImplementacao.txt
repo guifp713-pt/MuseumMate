@@ -1,0 +1,97 @@
+Vou dividir em 3 fases sequenciais, cada uma mapeável a uma feature separada do spec-kit (002-..., 003-..., 004-...), porque têm ciclos de vida e riscos diferentes.
+
+---
+Fase 1 — Seleção de Entidade Ativa por documentId
+
+Objetivo: a app e o backend do assistente devem operar sobre uma única entidade escolhida por um documentId centralizado no código, para poderes alternar entre o museu fictício e o museu real sem tocar em mais nada.
+
+Requisitos Funcionais
+
+- FR-1.1: O sistema DEVE obter apenas a entidade cujo documentId corresponde a uma constante configurada no código (filtro no pedido ao Strapi, ex.: filters[documentId][$eq]=...), em vez de buscar todas as entidades e assumir a primeira.
+- FR-1.2: Essa constante DEVE existir num único ponto no código (não duplicada), para que trocar de museu seja uma alteração de uma linha.
+- FR-1.3: O backend do assistente (assistant-catalog.ts) DEVE usar a mesma entidade configurada que a app móvel usa — nunca podem divergir (senão o chat responde sobre um museu diferente do que está no ecrã).
+- FR-1.4: Se o documentId configurado não corresponder a nenhuma entidade (ex.: apagada ou erro de escrita), o sistema DEVE mostrar um erro claro em vez de crashar ou mostrar ecrãs vazios sem explicação.
+- FR-1.5: A cache local (SQLite via QtQuick.LocalStorage, chave atual = lang) DEVE ser invalidada quando o documentId configurado muda — hoje a cache assume implicitamente "uma entidade por língua"; se trocares o ID sem invalidar, a app mostra conteúdo antigo até desinstalar.
+
+Requisitos Não-Funcionais
+
+- NFR-1.1: Não repetir o problema já conhecido do baseUrl duplicado entre ApiHandler.js/AnalyticsHandler.js (referido no plan.md como princípio "Environment Configuration Discipline") — o documentId não pode acabar hardcoded em dois sítios.
+- NFR-1.2: A mudança deve ser reversível em segundos (troca do ID + reinstalação/rebuild), para suportar testes A/B entre o museu fictício e o real durante a transição.
+- NFR-1.3: Filtragem deve ocorrer no servidor (query param), não no cliente, para não desperdiçar payload a transferir dados de entidades que não vais mostrar.
+
+---
+Fase 2 — Conteúdo Real de um Novo Museu [CONCLUÍDA]
+
+Objetivo: existem agora duas entidades completas no Strapi — a entidade fictícia original (conteúdo gerado por IA, mantida como fallback/comparação, nunca apagada) e a nova entidade real do Museu de Portimão, com Maps, Areas, Items, Tours e Dictionary populados seguindo a mesma estrutura sequencial já existente (Entity → Map → Areas → Items, Tour → Items). Tradução oficial (EN/ES/FR), reatribuição de códigos QR/NFC e associação de media já feitas.
+
+Requisitos Funcionais
+
+- FR-2.1: O sistema DEVE suportar coexistência de múltiplas entidades na base de dados sem interferência entre si — validado na prática pela Fase 1, app e assistente operam corretamente sobre o Museu de Portimão via troca de documentId. [OK]
+- FR-2.2: Todo o conteúdo introduzido na entidade do Museu de Portimão (Entity, Maps, Areas, Items, Tours, Dictionary) corresponde a factos reais e verificáveis do museu, ao contrário da entidade fictícia original, cujo conteúdo foi gerado por IA. [OK]
+- FR-2.3: O conteúdo em português foi traduzido para EN/ES/FR reutilizando o translate-content.js já existente — traduções oficiais completas confirmadas via API para Entity, Map, Area, Item, Tour e Dictionary (incluindo a correção de um problema de dados encontrado no Dictionary, onde as duas entidades tinham locales trocados). [OK]
+- FR-2.4: Os code dos item (usados para leitura de QR/NFC) foram reatribuídos de acordo com a disposição física real do Museu de Portimão. [OK]
+- FR-2.5: Media (imagens, áudio) foi carregada e associada corretamente a cada area/item/entidade do Museu de Portimão. [OK]
+
+Requisitos Não-Funcionais
+
+- NFR-2.1: A entidade fictícia atual não foi apagada — mantém-se como fallback/comparação. [OK]
+- NFR-2.2: Cobertura de tradução completa (100% dos campos localizáveis) confirmada antes de avançar para a Fase 3. [OK]
+- NFR-2.3: Esforço de data entry + curadoria, não de arquitetura — concluído sem necessidade de ciclo plan/tasks completo do spec-kit.
+
+---
+Fase 3 — IA com Fallback de Conhecimento Interno (mantendo o guardrail de domínio)
+
+[PIVOT 2026-07-27] Esta fase foi originalmente desenhada como "fallback de pesquisa web" (Google Search grounding do Gemini). O grounding exige conta de faturação ativa na chave (dá 429 RESOURCE_EXHAUSTED sem billing), e este projeto (académico) não quer ativar billing. Por isso a 2ª chamada passou a ser um fallback de CONHECIMENTO INTERNO do modelo: uma chamada normal ao Gemini, sem pesquisa/grounding, em que o modelo responde a partir do seu conhecimento treinado quando o catálogo não chega — mantendo o catálogo como fonte de maior prioridade e a proibição de inventar. Toda a arquitetura desta fase (guardrail, classificação, kill switch, prioridade do catálogo, evento de analytics) mantém-se; onde abaixo se lê "pesquisa web/externa", ler "resposta por conhecimento interno do modelo", e o eventType é assistant_knowledge_fallback. Ver specs/003-assistant-web-fallback/research.md §1/§2.
+
+Objetivo: o assistente continua a usar o catálogo como fonte primária e autoritativa; só quando o catálogo não é suficiente para uma pergunta que ainda é sobre o museu, pode complementar com conhecimento interno do modelo — sem nunca voltar a responder como chatbot genérico.
+
+Esta é a fase de maior risco: hoje o guardrail funciona porque a IA está impedida estruturalmente de usar conhecimento fora do catálogo (FR-012 da spec atual). Ao dares-lhe acesso a pesquisa, esse guardrail passa a depender de classificação de intenção, que é mais frágil.
+
+Requisitos Funcionais
+
+- FR-3.1: O sistema DEVE tentar responder primeiro apenas com o catálogo (comportamento atual, FR-012 da spec 001); só recorre a pesquisa externa quando o catálogo não tem informação relevante e a pergunta continua no domínio do museu.
+- FR-3.2: O sistema DEVE classificar cada pergunta em três categorias antes de decidir a estratégia de resposta: (a) respondível pelo catálogo, (b) sobre o museu mas não coberta pelo catálogo → candidata a pesquisa, (c) fora do domínio do museu → recusar (comportamento atual da US2, sem alterações).
+- FR-3.3: Quando ocorrer pesquisa externa, a query DEVE ser construída de forma restrita (ex.: "<nome do museu> <tópico da pergunta>"), nunca a pergunta em bruto do visitante — reduz o risco de a pesquisa derivar para tópicos não relacionados.
+- FR-3.4: Respostas que usaram pesquisa externa DEVEM ser identificadas de forma visível ao visitante (novo indicador, semelhante ao "Tradução automática" já existente), para transparência sobre a fonte.
+- FR-3.5: Em caso de conflito entre catálogo e resultado de pesquisa, o catálogo tem sempre prioridade; se não houver catálogo nem resultado de pesquisa conclusivo, o assistente DEVE admitir que não tem a informação, nunca inventar.
+- FR-3.6: O guardrail de recusa de perguntas fora do domínio do museu (US2 da spec 001) DEVE continuar a aplicar-se integralmente mesmo com a capacidade de pesquisa ativa — ter acesso à web não pode ser usado como argumento para responder a perguntas pessoais/genéricas do visitante.
+- FR-3.7: O sistema DEVE registar via analytics (novo eventType assistant_knowledge_fallback) sempre que o fallback de conhecimento interno for acionado, para identificar lacunas reais de conteúdo no catálogo (sinal útil para priorizar o que adicionar na Fase 2 de outras áreas/museus).
+
+Requisitos Não-Funcionais
+
+- NFR-3.1: Latência — pesquisa externa provavelmente ultrapassa os 10s do SC-001 atual; precisa de um SC próprio para este caminho (ou um indicador "a pesquisar..." na UI, já identificado como gap pendente no resumo_implementacao.txt).
+- NFR-3.2: Custo/quota — grounding com pesquisa via Gemini pode não ser elegível no tier gratuito atual; isto é uma investigação a fazer no research.md desta fase antes de assumir viabilidade, não um dado adquirido.
+- NFR-3.3: Segurança de conteúdo — informação vinda da web nunca deve ser apresentada com o mesmo peso de "facto verificado do museu"; a proveniência deve ficar sempre distinguível (liga-se ao FR-3.4).
+- NFR-3.4: Compatibilidade — extensões ao contrato AssistantAskResponse devem ser aditivas (novo campo opcional), sem quebrar o cliente atual.
+
+---
+Fase 4 — Dashboard de Analítica Multi-Entidade
+
+Objetivo: com a Fase 1 a introduzir seleção de entidade ativa e a Fase 2 a criar uma segunda entidade real, o plugin analytics-dashboard e o próprio content-type analytics-event continuam a assumir implicitamente "existe uma única entidade no sistema" — nenhum evento sabe a que museu pertence, e o dashboard agrega tudo sem qualquer segmentação. Confirmado por inspeção: o schema de analytics-event (analytics-event/content-types/analytics-event/schema.json) não tem nenhum campo de entidade; o AnalyticsHandler.js (mobile app) não envia nenhum identificador de museu no payload de sendEvent; e o HomePage.jsx do plugin busca sempre TODOS os eventos (paginação completa, sem filtro) e TODOS os itens (pageSize fixo de 100, sem filtro) para calcular KPIs, gráficos e o mapa itemId→nome. Sem esta fase, assim que houver duas entidades reais em produção (pós Fase 2), as métricas mostradas (visitas, idioma dominante, item mais visitado) tornam-se estatisticamente erradas, misturando visitantes de museus diferentes na mesma contagem — e não há forma de as separar depois, porque a informação de origem nunca chegou a ser guardada.
+
+Requisitos Funcionais
+
+- FR-4.1: O content-type analytics-event DEVE passar a guardar a que entidade pertence cada evento (novo campo, ex.: entidadeDocumentId ou relação para entidade) — hoje o schema só tem eventType/timestamp/sessionId/language/itemId/tourId/success/metadata, nada que identifique o museu de origem.
+- FR-4.2: O AnalyticsHandler.js DEVE enviar, em cada chamada a sendEvent, o documentId da entidade ativa configurada pela Fase 1 (a mesma constante única, nunca uma cópia local) — hoje o payload de sendEvent (linha ~66-81) não inclui qualquer identificador de museu.
+- FR-4.3: O plugin analytics-dashboard DEVE expor um seletor de entidade/museu na UI (HomePage.jsx), e todos os cálculos derivados (calculateStats, buildChartData, buildTopItemsChartData) DEVEM respeitar a entidade selecionada, em vez de processar sempre o conjunto global de eventos.
+- FR-4.4: O pedido a /api/analytics-events feito em useAnalytics (HomePage.jsx) DEVE filtrar por entidade no servidor (query param, ex.: filters[entidadeDocumentId][$eq]=...), em vez de paginar e trazer sempre todos os eventos de todas as entidades para depois (não) filtrar no cliente.
+- FR-4.5: O mapeamento itemId → nome de item (função carregarNomesDoStrapi, hoje com pageSize=100 fixo e sem filtro nenhum) DEVE ser filtrado pela mesma entidade ativa — com uma segunda entidade real (Fase 2) a somar itens à primeira, este limite de 100 deixa de ser suficiente e passa a devolver nomes incompletos/errados também para a entidade atual.
+- FR-4.6: Eventos analytics-event criados antes desta fase (sem entidade associada) DEVEM ser migrados/rotulados explicitamente (ex.: atribuídos por defeito ao documentId da entidade fictícia original), para não desaparecerem das estatísticas nem ficarem contabilizados na entidade errada depois do filtro (FR-4.4) entrar em vigor.
+- FR-4.7: O endpoint custom getLanguageStats (analytics-event/controllers/analytics-event.ts), que hoje agrega sessionId globalmente via query ao knex sem qualquer distinção de museu, DEVE também aceitar e aplicar o filtro de entidade.
+- FR-4.8: O dashboard DEVE passar a mostrar métricas de utilização do assistente de IA — hoje o eventType já regista assistant_question, assistant_decline e assistant_error (com o campo success) sempre que o backend do assistente responde (assistant.ts, writeAnalytics), mas o plugin analytics-dashboard não tem nenhum KPI, gráfico ou secção que leia estes eventos; toda a utilização da IA fica invisível no dashboard atual.
+- FR-4.9: As métricas de IA DEVEM distinguir claramente perguntas respondidas com sucesso, recusas por estarem fora do domínio do museu (assistant_decline) e erros técnicos (assistant_error) — não podem ser agregadas num único número, para se perceber se um pico é "visitantes a perguntar coisas fora de âmbito" ou "o assistente está a falhar".
+- FR-4.10: As métricas de IA DEVEM respeitar a mesma segmentação por entidade ativa introduzida por esta fase (FR-4.3/FR-4.4) — a utilização do assistente no Museu de Portimão não pode aparecer misturada com a da entidade fictícia.
+- FR-4.11: O dashboard DEVE já ficar preparado para, quando a Fase 3 introduzir o eventType assistant_knowledge_fallback (FR-3.7), conseguir mostrar também quantas respostas do assistente recorreram ao conhecimento interno do modelo (fora do catálogo), sem exigir uma nova secção do dashboard nessa altura.
+
+Requisitos Não-Funcionais
+
+- NFR-4.1: Esta fase depende tecnicamente da Fase 1 — o identificador de entidade gravado em cada evento (FR-4.1/FR-4.2) tem de ser exatamente o mesmo documentId centralizado usado para escolher o museu na app, para não recriar o problema já conhecido do baseUrl duplicado (NFR-1.1) com um segundo identificador divergente.
+- NFR-4.2: A alteração ao schema do analytics-event deve ser aditiva (campo novo, nada removido/renomeado), para não invalidar os eventos já guardados offline em analytics_cache (SQLite local) nos dispositivos que ainda não foram sincronizados com o Strapi.
+- NFR-4.3: O filtro por entidade no dashboard não pode degradar a paginação/refresh já existentes (100 eventos por página, polling a cada 10s) — a filtragem deve ocorrer no pedido ao servidor (query param), nunca carregando tudo e filtrando no cliente, seguindo o mesmo princípio já definido na Fase 1 (NFR-1.3).
+- NFR-4.4: Esta fase só é testável de forma realista com pelo menos duas entidades a gerar eventos em simultâneo — faz mais sentido validar depois de a Fase 2 ter uma segunda entidade real populada, para confirmar a segmentação com dados verdadeiros e não apenas com a entidade fictícia duplicada artificialmente.
+- NFR-4.5: As métricas de IA (FR-4.8 a FR-4.11) não exigem nenhum novo eventType nem alteração de schema — os eventos já são gravados desde a feature 001 (assistant_question/assistant_decline/assistant_error); o trabalho desta fase é puramente de agregação e visualização no plugin analytics-dashboard, seguindo o mesmo padrão já usado para visitas/idiomas/itens.
+
+---
+Como isto se encaixa no spec-kit
+
+Sugiro tratar como quatro features distintas (002-content-source-switch, 003-real-museum-content, 004-assistant-web-fallback, 005-analytics-dashboard-multi-entidade). Ordem de dependências: a Fase 1 é pré-requisito técnico de todas as outras (é ela que cria o conceito de "entidade ativa" via documentId); a Fase 3 depende da Fase 2 estar validada (não faz sentido testar guardrails de pesquisa sobre o museu fictício); a Fase 4 depende diretamente da Fase 1 (schema/config do documentId) e beneficia de correr depois da Fase 2 (para ter uma segunda entidade real com tráfego onde validar a segmentação), mas é independente da Fase 3 — pode avançar em paralelo com ela assim que a Fase 2 estiver concluída.

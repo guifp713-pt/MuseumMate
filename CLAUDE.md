@@ -47,7 +47,7 @@ Collection types under `backend/app/src/api/*/content-types/*/schema.json`, all 
 - **`area`** — belongs to a `map`; has `posX`/`posY` coordinates, `imageArea`, `audioArea`, and its own `items`.
 - **`item`** — a stop/exhibit; has `posXItem`/`posYItem`, `coverItem`, `audioItem`, and a `code` (used for QR/NFC lookup).
 - **`dictionary`** — per-entity key/value translation strings, consumed client-side as a flat lookup table.
-- **`analytics-event`** — event log written by the mobile app (see Analytics below).
+- **`analytics-event`** — event log written by the mobile app and the assistant backend (see Analytics below and Custom APIs below); `eventType` enum includes `assistant_question`/`assistant_decline`/`assistant_error`/`assistant_knowledge_fallback` alongside the visitor-tracking events.
 
 Because relations are deeply nested and localized, the API is queried with a single large `populate` chain (see `ApiHandler.js` in the mobile app) rather than multiple requests — Strapi responses may or may not be wrapped in `.data`/`.attributes` depending on version/config, so client code defensively checks both shapes (`rawData.attributes || rawData`).
 
@@ -55,6 +55,21 @@ Because relations are deeply nested and localized, the API is queried with a sin
 
 - **`analytics-dashboard`** — admin-panel dashboard for visualizing analytics events; has its own `admin/src` and `server/src`, built with `@strapi/sdk-plugin` (`npm run build` / `npm run watch` inside the plugin dir).
 - **`map-picker`** ("Map Pin Picker") — admin-panel widget for visually placing `posX`/`posY` pins on a map image when editing `area`/`item` content.
+
+### Custom API: assistant (`backend/app/src/api/assistant/`)
+
+Custom Strapi route (`POST /api/assistant/ask`, `auth: false`) — no `assistant` content-type exists.
+
+- **`assistant-catalog.ts`** — fetches the full localized catalog for one `entidade`, filtered by the active museum (`config/museum.ts`'s `ACTIVE_ENTITY_DOCUMENT_ID`), with a 5-minute in-process cache per language.
+- **`assistant-ai.ts`** — two Gemini calls (model pinned to `gemini-3.1-flash-lite`, `@google/genai`), both server-side only (the API key never reaches the mobile client):
+  - `ask()` — the primary, always-attempted call: answers strictly from the catalog, declines off-domain questions, and reports (via structured JSON output) `onTopic`, `autoTranslated`, and whether the catalog was sufficient (`catalogSufficient`/`searchTopic`).
+  - `answerFromKnowledge()` — only called when `onTopic && !catalogSufficient` and `config/assistant.ts`'s `KNOWLEDGE_FALLBACK_ENABLED` switch is on; a **plain** second Gemini call (no tools, no Google Search grounding — grounding needs billing, so it is deliberately avoided), with the catalog content passed in so it still takes precedence on conflict, that lets the model answer from its own trained knowledge and reports `confident` (false ⇒ treated as no answer, never a fabrication). The original design used Google Search grounding; see `specs/003-assistant-web-fallback/research.md §1/§2` for why it was replaced by a knowledge-based fallback.
+- **`controllers/assistant.ts`** — orchestrates both calls, timeouts (`AI_TIMEOUT_MS`, reused for both), and writes one `analytics-event` row per interaction (`assistant_question`/`assistant_decline`/`assistant_error`/`assistant_knowledge_fallback`), never containing message/answer text.
+
+### Config (`backend/app/src/config/`)
+
+- **`museum.ts`** — `ACTIVE_ENTITY_DOCUMENT_ID`, the single backend-side source of truth for which `entidade` the app/assistant serve (must match the mobile app's own copy in `ApiHandler.js`); also per-entity map zoom overrides.
+- **`assistant.ts`** — `KNOWLEDGE_FALLBACK_ENABLED`, a backend-only kill switch for the assistant's general-knowledge fallback capability (the second call that answers from the model's own knowledge when the catalog can't); no mobile-side counterpart needed.
 
 ## Mobile app (`TourAssistent-main/`)
 
@@ -78,6 +93,8 @@ App state lives in `main.qml` as a single `appData` property (`entities`, `maps`
 
 - **`ApiHandler.js`** — all Strapi communication and response shaping. `getData(lang, callback)` fetches (and SQLite-caches, via `QtQuick.LocalStorage`) the full nested payload for a language, then serves from cache on repeat calls. Separate `getEntities`/`getMaps`/`getAreas`/`getItems`/`getTours`/`getTourItems`/`getDictionary`/`extractMediaUrls` functions flatten the nested Strapi response into flat arrays the QML views bind to. `resolveUrl(path, localPath)` decides whether to point at a locally-cached file or the live `baseUrl`. **`baseUrl` is a hardcoded LAN IP that must be updated per network/environment** (several commented alternatives are left in place for different networks — a real fix would make this configurable rather than edited-and-recommitted per deployment).
 - **`AnalyticsHandler.js`** — device analytics. Generates and persists a permanent per-device ID in local SQLite (`app_settings` table), POSTs events to `/api/analytics-events`, and falls back to a local `analytics_cache` table when the network request fails (for later resend). Note its `baseUrl` is a separate hardcoded constant from `ApiHandler.js`'s — keep them in sync when changing environments.
+- **`AssistantHandler.js`** — talks to the backend's `POST /api/assistant/ask` (reuses `ApiHandler.js`'s `baseUrl`, no third copy). `askAssistant(...)` returns `{ answer, autoTranslated, onTopic, usedGeneralKnowledge }`; a client-side request timeout (`REQUEST_TIMEOUT_MS`) must stay strictly greater than the backend's own timeouts so the server always gets to return a structured error first.
+- **`ChatIAPanel.qml`** — the assistant's chat UI (extracted from `HomePage.qml`'s `recChat` stub), instantiated from `HomePage.qml`. In-memory conversation only (never persisted). Shows the "Automatic translation" and "AI general-knowledge answer (outside the museum catalog)" indicators per message, and swaps its typing indicator to a "still thinking…" label on an elapsed-time heuristic (the backend can't signal mid-request when it takes the slower two-call knowledge-fallback path).
 - QML pages (`WelcomePage.qml`, `HomePage.qml`, `Tours.qml`, `TourPage.qml`, `ScannerPage.qml`, `GlobalQrButton.qml`, `GlobaLButtonChatIA.qml`) are loaded/composed from `main.qml`, which also owns navigation state (`nextPage`) and language selection (`linguaEscolhida`, persisted as `linguaGuardada`).
 
 ### Networking note
