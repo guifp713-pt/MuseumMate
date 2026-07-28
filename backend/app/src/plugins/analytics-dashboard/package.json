@@ -1,0 +1,52 @@
+{
+  "name": "analytics-dashboard",
+  "version": "0.0.0",
+  "description": "Dashboard de analytics",
+  "license": "MIT",
+  "author": "Guilherme Fonte Peixoto <guifp713@gmail.com>",
+  "type": "commonjs",
+  "exports": {
+    "./package.json": "./package.json",
+    "./strapi-admin": {
+      "source": "./admin/src/index.js",
+      "import": "./dist/admin/index.mjs",
+      "require": "./dist/admin/index.js",
+      "default": "./dist/admin/index.js"
+    },
+    "./strapi-server": {
+      "source": "./server/src/index.js",
+      "import": "./dist/server/index.mjs",
+      "require": "./dist/server/index.js",
+      "default": "./dist/server/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "strapi-plugin build",
+    "watch": "strapi-plugin watch",
+    "watch:link": "strapi-plugin watch:link",
+    "verify": "strapi-plugin verify"
+  },
+  "strapi": {
+    "kind": "plugin",
+    "name": "analytics-dashboard",
+    "displayName": "Analytics Dashboard",
+    "description": "Dashboard de analytics"
+  },
+  "devDependencies": {
+    "@strapi/sdk-plugin": "^6.1.1",
+    "prettier": "^3.8.4"
+  },
+  "peerDependencies": {
+    "@strapi/strapi": "^5.0.0",
+    "@strapi/design-system": "^2.0.0",
+    "@strapi/icons": "^2.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-intl": "^6.0.0",
+    "react-router-dom": "^6.0.0",
+    "styled-components": "^6.0.0"
+  }
+}

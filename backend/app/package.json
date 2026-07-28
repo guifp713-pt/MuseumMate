@@ -1,0 +1,55 @@
+{
+  "name": "app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Strapi application",
+  "scripts": {
+    "build": "strapi build",
+    "console": "strapi console",
+    "deploy": "strapi deploy",
+    "dev": "strapi develop",
+    "develop": "strapi develop --no-watch-admin",
+    "start": "strapi start",
+    "strapi": "strapi",
+    "upgrade": "npx @strapi/upgrade latest",
+    "upgrade:dry": "npx @strapi/upgrade latest --dry",
+    "translate:content": "node scripts/translate-content.js",
+    "translate:content:force": "node scripts/translate-content.js --force"
+  },
+  "dependencies": {
+    "@google/genai": "^2.12.0",
+    "@strapi/plugin-cloud": "^5.48.0",
+    "@strapi/plugin-users-permissions": "^5.48.0",
+    "@strapi/strapi": "^5.48.0",
+    "better-sqlite3": "^12.11.1",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.51.0",
+    "react-router-dom": "^6.22.3",
+    "sanitize-html": "^2.17.5",
+    "sharp": "^0.35.1",
+    "styled-components": "^6.1.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18.3.1",
+    "@types/react-dom": "^18.3.1",
+    "typescript": "^5"
+  },
+  "overrides": {
+    "react": "$react",
+    "react-dom": "$react-dom"
+  },
+  "engines": {
+    "node": ">=20.0.0 <=24.x.x",
+    "npm": ">=6.0.0"
+  },
+  "strapi": {
+    "uuid": "bcf37d94-d86e-4be5-ba39-04351e5355b0",
+    "installId": "37a15a2efc331457fc4ca82b4168f7c4422d571bfdccd4f825733c36bbc7f1d2"
+  },
+  "workspaces": [
+    "src/plugins/*"
+  ]
+}

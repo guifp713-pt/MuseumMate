@@ -1,0 +1,87 @@
+{
+  "kind": "collectionType",
+  "collectionName": "entidades",
+  "info": {
+    "singularName": "entidade",
+    "pluralName": "entidades",
+    "displayName": "Entity"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": true
+    }
+  },
+  "attributes": {
+    "nameEntity": {
+      "type": "string",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "descriptionEntity": {
+      "type": "text",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "imageEntity": {
+      "type": "media",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      },
+      "multiple": false,
+      "allowedTypes": [
+        "images",
+        "files"
+      ]
+    },
+    "maps": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::map.map",
+      "mappedBy": "entidade"
+    },
+    "welcome_message": {
+      "type": "text",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "audio": {
+      "type": "media",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      },
+      "multiple": false,
+      "allowedTypes": [
+        "files",
+        "audios"
+      ]
+    },
+    "tours": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::tour.tour",
+      "mappedBy": "entidade"
+    },
+    "dictionaries": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::dictionary.dictionary",
+      "mappedBy": "entity"
+    }
+  }
+}

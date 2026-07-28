@@ -1,0 +1,39 @@
+{
+  "name": "map-pin-picker",
+  "version": "1.0.0",
+  "description": "Ferramenta visual para posicionar pins no mapa",
+  "type": "commonjs",
+  "exports": {
+    "./package.json": "./package.json",
+    "./strapi-admin": {
+      "source": "./admin/src/index.tsx",
+      "import": "./admin/src/index.tsx",
+      "require": "./admin/src/index.tsx",
+      "default": "./admin/src/index.tsx"
+    },
+    "./strapi-server": {
+      "source": "./server/src/index.js",
+      "import": "./server/src/index.js",
+      "require": "./server/src/index.js",
+      "default": "./server/src/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "strapi-plugin build",
+    "watch": "strapi-plugin watch"
+  },
+  "strapi": {
+    "kind": "plugin",
+    "name": "map-pin-picker",
+    "displayName": "Map Pin Picker"
+  },
+  "devDependencies": {
+    "@strapi/sdk-plugin": "^6.1.1",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-router-dom": "^6.0.0"
+  }
+}

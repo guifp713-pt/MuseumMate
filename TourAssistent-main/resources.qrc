@@ -1,0 +1,52 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>ApiHandler.js</file>
+        <file>WelcomePage.qml</file>
+        <file>HomePage.qml</file>
+        <file>proto.qml</file>
+        <file>images/pouse.png</file>
+        <file>Tours.qml</file>
+        <file>TourPage.qml</file>
+        <file>guiaLayout</file>
+        <file>fonts/PlayfairDisplay-Medium.ttf</file>
+        <file>fonts/PlayfairDisplay-SemiBold.ttf</file>
+        <file>fonts/Inter_18pt-Medium.ttf</file>
+        <file>fonts/Inter_18pt-Regular.ttf</file>
+        <file>fonts/Inter_24pt-SemiBold.ttf</file>
+        <file>GlobalQrButton.qml</file>
+        <file>ScannerPage.qml</file>
+        <file>AnalyticsHandler.js</file>
+        <file>GlobaLButtonChatIA.qml</file>
+        <file>ChatIAPanel.qml</file>
+        <file>AssistantHandler.js</file>
+    </qresource>
+    <qresource prefix="/images">
+        <file>images/pouse.png</file>
+        <file>images/PlayButton.png</file>
+        <file>images/clockGold.png</file>
+        <file>images/audioIcon.png</file>
+        <file>images/IconMuseum.png</file>
+        <file>images/headphone.png</file>
+        <file>images/icons8-map-24.png</file>
+        <file>images/qrCode.png</file>
+        <file>images/checkmark.png</file>
+        <file>images/close.png</file>
+        <file>images/explorar_black.png</file>
+        <file>images/explorar_white.png</file>
+        <file>images/list_black.png</file>
+        <file>images/list_white.png</file>
+        <file>images/delete.png</file>
+        <file>images/iconMapGold.png</file>
+        <file>images/iconMapGray.png</file>
+        <file>images/icons8-openboo_Gray.png</file>
+        <file>images/icons8-openbook_gold.png</file>
+        <file>images/nextIcon.png</file>
+        <file>images/audioIconGold.png</file>
+        <file>images/chat.png</file>
+        <file>images/sparkle.png</file>
+        <file>images/send_IA.png</file>
+        <file>images/iconProfile.png</file>
+        <file>images/send_black.png</file>
+    </qresource>
+</RCC>

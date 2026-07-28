@@ -1,0 +1,60 @@
+{
+  "kind": "collectionType",
+  "collectionName": "maps",
+  "info": {
+    "singularName": "map",
+    "pluralName": "maps",
+    "displayName": "Map"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": true
+    }
+  },
+  "attributes": {
+    "nameMap": {
+      "type": "string",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "imageMap": {
+      "type": "media",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      },
+      "multiple": false,
+      "allowedTypes": [
+        "images",
+        "files"
+      ]
+    },
+    "floorMap": {
+      "type": "string",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "entidade": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::entidade.entidade",
+      "inversedBy": "maps"
+    },
+    "areas": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::area.area",
+      "mappedBy": "map"
+    }
+  }
+}

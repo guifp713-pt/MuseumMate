@@ -1,0 +1,41 @@
+{
+  "kind": "collectionType",
+  "collectionName": "dictionaries",
+  "info": {
+    "singularName": "dictionary",
+    "pluralName": "dictionaries",
+    "displayName": "Dictionary"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {
+    "i18n": {
+      "localized": true
+    }
+  },
+  "attributes": {
+    "key": {
+      "type": "string",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "value": {
+      "type": "text",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      }
+    },
+    "entity": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::entidade.entidade",
+      "inversedBy": "dictionaries"
+    }
+  }
+}

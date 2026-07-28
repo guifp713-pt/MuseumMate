@@ -1,0 +1,153 @@
+************************____ERROS A CORRIGIR____************************
+
+
+
+Erros de duplicados ao ler com scan
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Notas acerca de cada Pagina: 
+
+--------ApiHandler.js--------
+
+Descricao generica: 
+Paigna fundamental para o funcionamento da aplicacao pois aqui é onde o codigo faz um pedido GET ao backend para conseguirmos retornar todos os dados
+da aplicacao. 
+
+Funcionalidades e Descricao Tecnica
+ada colections para retornar os dados
+-Uso do QtQuick.LocalStorage 2.0: Permite armazenar os dados em cache, ou seja o funcionamento é 
+na primeira vez que o user utilize a aplicacao é obrigatorio estarligado á internet porem esta opcao tecnica foi algo fundamental pois em locais do museu com internet
+mais instavel, para nao depender totalmeomnte de chamadas GET coom isto nas visitas subsquantes o visitnate 
+tem acesso á app totalmeomnte offline.
+O uso da funcao resolveURl foi fundamente para resolver o problema dos dados media pois o funcionamento é diferente. Aqui é responsavel por decidir se vai chamar diretamente no strapi ou se chama os media localmente 
+(EXPLICA MELHOR ESTA PARTE)
+
+____________________________________________________________________________________________________________________________________________
+
+--------AnalyticsHandler.js--------
+
+Descricao Generica: Pagina totalmente responsavel por enviar os dados para a colection AnalyticsEvent
+armazenar em cache caso nao consiga enviar diretamente.
+
+Descricao Tecnica: A pagina comeca com a funcao getDataBase por criar tabelas em cache para armazenar dados futuros.
+Comeca por criar uma funcao gerOrCreateDeviceId responsavel por preencher um campo device:id  que consegue detetar especificamente um utilizador do outro que é  fundamental existir para
+no dashboard conseguirmos organizar corretamente. 
+
+Depois temos a funcao sendEvent que é responsavel por enviar os dados caso exista ligacao com o backend 
+pode enviar direto fazendo post na colection AnalyticsEvent do strapi de estatisticas e apagando a tabela em cache existente. 
+Caso nao consiga chama a funcao saveToCache responsavel por 
+armazenar os dados num tabela em cache. Depois com a funcao syncCache e a funcao enviarEventoAgendado 
+caso exista ligacao com o backend ele envia todos os eventos que tinham sido armazenados e depois apaga a tabela em cache existente para garantir fiabilidade nos dados enviados e para nao ter muitos dados desnecesarios sendo enviados 
+
+
+____________________________________________________________________________________________________________________________________________
+
+MAIN.QML: 
+
+
+Descricao generica: Pagina responsavel por selecionar lingua que o visitante vai utilizar no sistema, chamar as funcao de enviar(POST) cache e receber(GET) cache dos dados do sistema.
+
+Funcionalidades
+-Carrego todos os dados da aplicacao e passa o objeto com os dados recebidos atravez do loader. 
+-Envio de dados POST para analyticsEvent enviando o comeco da visita, data, lingua escolhida etc. 
+-Recebe os dados todos do sistema e armaazenando num objeto, depois envio esse objeto pelo loader para cada pagina.
+
+____________________________________________________________________________________________________________________________________________
+HomePage
+
+Descricao generica: Pagina responsavel mostrar um mapa interativo do museu. Permitindo vizualizar os pins das areas do mapa independente do mapa/piso. Para alem disso conseguimos ver de forma bem visual as areas com zoom 
+nas areas depois mostrando as pecas, obras ,etc presentes dentro da area/ ponto de interesse. Para alem disso tem um sistema integrado de Qrcode e code dinamico que automatiza toda a navegacao manual até um item.
+
+-Explicar o uso da bilbioteca QZXing e como funciona. Basicamente ele le o qrCode que tem o id do item, na tag e compara com o documentId assim que verifica. 
+
+
+____________________________________________________________________________________________________________________________________________
+WelcomePage
+
+-Redireciona para duas opcoes: Iniciar Visita Livre e Visitas guiadas. Se for Iniciar visita é levado para a HomePage, caso seja visitas guiadas
+-Para alem disso algumas informacoes do museu 
+
+Nenhuma descricao tecnica aqui
+____________________________________________________________________________________________________________________________________________
+Tours
+Listagem de Visitas guiadas
+
+Descricao generica: Aqui o principal que está a acontecer é uma listagem de todas as visitas guidas, quando o utilizador seleciona a visita guiada 
+redireciona para dentro da visita guiada
+____________________________________________________________________________________________________________________________________________
+TourPage  **Dar importancia aqui ao explicar esta parte.**
+IMPORTANTE MENCIONAR NA 4.7.1- Pontos essenciais na criacao desta pagina, porque ela foi criada. 
+-Ela foi criada e projetada para complementar a visita do visitante no museu a ideia era permitir que o Visitante tenha uma experiencia mais interativa com o uso do audio-guia e mesmo assim ainda ter a experiencia visual. Entao o foco nesta parte foi Com o uso do foregroud service (Aqui mencionas o capitulo que ele foi citado na explicacao posterior)
+permitir que o utilizador consiga ouvir a descricao de um determinado item e sequencial quando acabar permite comecar a ouvir logo outro item da sala. A ideia daqui foi organizar de forma a ser sequencial, dar informacoes até adicionais entre items para localizar o vitisante para outros items etc.
+
+Pagina sequencial onde mostra todos os items presentes dentro da Visita guiada com funcionalidades interativas como insercao de code de 4 digitos e leitura de qrCode.
+
+-Funcionalidades Importantes: Como funciona o  foreground service: Falar que o audio fica na main e aqui eu comeco a reproduzir ele, imporante mencionar como ele consegue ser controlado nas notificacoes em tempo real , como o audio comeca areproduzir logo, para alem disto tudo falar sobre os servicos em java diretamente na pasta android do projeto.
+-Modo guide e lista de visualizacao dos items;
+-Pagina do qrCode e code. Explicar as funcoes de detetar se o qrCode e o code batem com algum item. [Aqui nao precisas detalhar muito pois o sistema é o da mesma usado na pagina HomePage.qml por isso mencionas somente] o funcionamente especifico para esta pagina
+-Como o sistema detecta que o item nao faz parte do tour e como mostra na mesma sem quebrar o fluxo de dados. (A ideia aqui foi conseguir manter o user dentro da tour mas poder ver varios items espalhados pelo museu na mesma e assim quando voltasse para a tour nao tivesse perdido o progresso que estava )
+-Explicar a funcao do ApiHandler responsavel por receber os Items dentro do Tour
+
+Codigos importantes falar juntamente com a TourPage.
+-Paginas responsaveis com o Foreground service:AndroidPermission.cpp, AudioBridge.cpp, MuseumActivity.java, TourAudioService.java.
+-ApiHandler.js: Para explicar 
+
+
+____________________________________________________________________________________________________________________________________________
+4.7.2 Visão Prévia das Funcionalidades Críticas
+Para alcançar este nível de interatividade e robustez, a TourPage articula várias frentes tecnológicas que introduzem o leitor aos capítulos seguintes deste relatório:
+
+Controlo Nativo via Foreground Service: Toda a reprodução de áudio é delegada para a camada nativa do sistema operativo. O ficheiro de áudio é inicializado a partir do ecrã principal (Main), mas passa a ser gerido por serviços Java (TourAudioService.java e MuseumActivity.java) localizados diretamente na diretoria interna do Android. Esta abordagem permite que o áudio comece a ser reproduzido instantaneamente e continue a funcionar em segundo plano, podendo ser controlado diretamente a partir das notificações do telemóvel em tempo real.
+
+Dualidade de Modos (Guide vs. Lista): A interface oferece flexibilidade total ao utilizador através das variáveis de estado valorLista e valorExplorar. O Modo Lista providencia uma visão panorâmica de todas as paragens do circuito, enquanto o Modo Guia foca a atenção do visitante no item atual, ativando um Mini Player persistente com barras de progresso interativas baseadas em controlos de arrasto (drag & drop).
+
+Identificação Inteligente (QR Code e Código de 4 Dígitos): O ecrã integra a biblioteca QZXing para pesquisa visual. O utilizador pode digitalizar um código QR ou digitar um PIN numérico através de um teclado virtual customizado. O sistema valida de imediato se o identificador corresponde a uma paragem cronológica do percurso atual.
+
+Tratamento de Itens Globais (Fora do Percurso): Caso o utilizador decida desviar-se do percurso planeado e digitalize uma obra de arte que não faz parte daquela visita guiada, o sistema deteta a discrepância sem quebrar o fluxo de dados. A aplicação abre um ecrã isolado para mostrar a informação e reproduzir o áudio desse item global, mas preserva intacto o progresso do utilizador no tour. Assim que o ecrã global é fechado, o visitante regressa exatamente ao ponto onde tinha parado no circuito.
+
+Consumo de Dados com ApiHandler.js: A receção e o mapeamento dos itens associados a cada rota e a sua filtragem dinâmica (tourInfoItem) são geridos de forma assíncrona por um módulo unificado em JavaScript, garantindo o desacoplamento entre a interface gráfica e o servidor de dados.
+
+
+
+
+
+
+Dias que faltei 
+
+Feriados -03/04, 06/04,1/05, 04/06, 10/06
+Dias faltados:13/04 ,14/04 , 25/05 e 26/05
+
+
+
+Eu tambem achei a ideia boa e eu queria ver o potencial de mercado que isto tem. EU ja tenho o prototipo no base44 que eu acho que está MUITO bom e cumpre tudo que mencionei antes. Vou descrever as paginas. Na pagina inicial Mostra uma mensagem de boas vindas e o nome da equipa
+depois logo abaixo contem uma caixa central onde indica o proximo evento que vai acontecer, seja o proximo treino, proximo jogo, se for proximo jogo mostra indicacoes do que falta fazer e do que está feito de forma clean e organizada. info como "convocatoria em falta, convocatoria enviada, montar 11, etc.
+lOGO ABAIXO aparece caixas com estatisticas especificas e simples coisas como data prx evento, jogadores disponiveis, jogadores lesionados ou suspensos, e depois aparece uma lista dos resultados dos ultimos jogos. No fim de toda a pagina aparece uma listagem dos botoes fixos da aplicacam que servem para navegacao da app. 
+Tem o Home que retorna para a pagina principal, Treinos, Jogos, Iniciar jogo agora, e mais. Para alem disso tudo encima aparece uma lupa para pesquisar na app toda e redireciona direto.  Se for para treinos
+da para crirar treinos e editar o treino. Ou seja de formma simples o treinador pode criar um treino e fica agendado. Posreiormente até tem uma funcionalidade de agendar treinos automaticamente justamente porque normlamente os treinos ja tem os treinos em datas pre definidas.
+Depois de ficar agendado quando chega á hora do treino aparece como em progresso e depois qunado acabado o treinador pode editar o treino para escrever quem esteve presente, faltou com ou sem justificacao. A ideia aqui depois é disponibilizar ao treinador ao dashboard deposi quem faltou mais e tal. O  treinador ate poderia haver uma aba de avalizacao dos treinos e tal que pensei agora. 
+Se for em jogos la da para fazer um CRUD de jogos tal como nos treinos. Mas os jogos eu queria depois numa fase mais avancada poder ja listar todos os resultados dos jogos e depois poder ver os proximos jogos diretamente. Os clubes normlamente quando é feito o sorteio das jornadas eles devem ter essa informacao guardada. Por isso daria para usar algo que eles ja tem para facilitar a listagem de jogos para o treinador.
+Ao criar um jogo teria, adversario, data e hora do jogo , local, tipo de competicao (taca, campeonado, etc), jogo fora ou em casa. Se criar o evento aparece o status, por preparar. Se clicar no jogo 
+aparece informacoes de defenir convocatoria e da para editar info do jogo. Dentro da convocatoria do jogo tem um botao chamado "Usar ultima convocatoria" ou da para inserir manualmente a quantidade de jogadores na convocatoria. A ideia depois de escolher os jogadores da convocatoria é enviar diretamente para app dos jogadores poderem ver se foram convocados ou nao e tal. E depois de enviar a convocatoria o status muda para Convocatoria enviada. Na aplicacao tem uma opcao de logistica tambem. Capaz de criar enquetes para aquele jogo. A ideia é falar acerca de boleias para jogos e qualquer tipo de assunto que seja necessario para aquele jogo
+A ideia da app é os jogadores entrarem no jogo vem se foram convocados e vao á logistica marcar se aparecem la no jogo sme boleia, se precisam de boleia e tal. Depois disso definido no dia do jogo o treinador tem uma parte de escolher o onze
+Aqui dentro de um campo de futebol da aplicacao mostra as opsicoes e ao clicar no + da para colocar os jogadores nas posicoes e tal. Aqui tambem tem a opcao de Usal ultimo onze inicial.
+Depois de o onze estar definido tem uma parte muito boa que é o modo jogo que é quando durante o jogo  o treinador ou algeum da equipa tecnica vai adicionado estatisticas, eles ja fazem isto manualmente com a app ainda gera estatisticas para a equipa. Funcionalidades daqui. Lista o onze titular e da para selecionar jogador e adicionar um evento para algum jogador. os eventos sao: Folo, Amarelo, Vermelho, Substituicao ou assistencia.
+Da para controlar isso tudo e depois da para adicionar com um layout simples e lindo quantidade de cantos, Livres, faltas, remates, remates á baliza, golos sofridos. Isto está numa fase inicial mas depois qunado acaba o jogo finalizamos o jogo e a aplicacao calcula a estatistica daquele jogo e armazena no Historico que depois da para consultar e tanto jogadores como Treinadores da para ambos verem dados acerca do jogo. pois dentro do jogo tem uma aba de eventos tambem.E por fim tem uma parte de mais que mostra 
+ao treinador uma lista de coisas que pode fazer, Jogadores. Aqui ele pode pesquisar por jogador, ver os disponiveis, duvida, lesioandos , suspensos. E qunado clica num jogador especifico da para ver estatisticas de um determinado jogador como posicao , idade, jogos feitos, golos , assistencias, dados pessoais como data de nascimento, telefone e status. e uma aba de notas que so o treinador ve que sao notas sobre um jogador especifico. O treinador pode adicionar ou remover jogador ou ate editar os seus dados. Pois esta 
+app foca em treinadores e equipas tecnicas que compram a app para auxilio ou tambem para equipas gerirem equipas.A ideia tambem é conseguir posterirormente dividir isto tudo por escaloes dentro do proprio clube.

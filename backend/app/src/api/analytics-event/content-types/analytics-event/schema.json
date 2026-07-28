@@ -1,0 +1,58 @@
+{
+  "kind": "collectionType",
+  "collectionName": "analytics_events",
+  "info": {
+    "singularName": "analytics-event",
+    "pluralName": "analytics-events",
+    "displayName": "AnalyticsEvent"
+  },
+  "options": {
+    "draftAndPublish": true
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "eventType": {
+      "type": "enumeration",
+      "enum": [
+        "visit_start",
+        "item_view",
+        "tour_start",
+        "tour_progress",
+        "tour_complete",
+        "scan_success",
+        "scan_error",
+        "assistant_question",
+        "assistant_decline",
+        "assistant_error",
+        "assistant_knowledge_fallback"
+      ]
+    },
+    "timestamp": {
+      "type": "datetime"
+    },
+    "sessionId": {
+      "type": "string"
+    },
+    "language": {
+      "type": "enumeration",
+      "enum": [
+        "pt",
+        "en",
+        "es",
+        "fr"
+      ]
+    },
+    "itemId": {
+      "type": "integer"
+    },
+    "tourId": {
+      "type": "integer"
+    },
+    "success": {
+      "type": "boolean"
+    },
+    "metadata": {
+      "type": "json"
+    }
+  }
+}

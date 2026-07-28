@@ -1,0 +1,18 @@
+services:
+  strapi:
+    build: .
+    container_name: strapi_app
+    ports:
+      - "1337:1337"
+      - "5173:5173"
+    volumes:
+      - ./app:/app
+      - /app/node_modules # Impede que os node_modules do teu host criem conflitos
+    environment:
+      - HOST=0.0.0.0 
+      - NODE_ENV=development
+      - NODE_OPTIONS=--max-old-space-size=4096
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_WATCH_POLLING=true
+      - WATCHPOLLING=true
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+# Pastas de Build (Compilação)
+build/
+build-*/
+*.user
+*.user.*
+
+# Temporários do Windows e Android
+Thumbs.db
+.DS_Store
+.gradle/
+captures/
+*.apk
+*.ap_
+
+# OpenSSL e Libs (se as tiveres fora do projeto)
+*.so
+*.a
