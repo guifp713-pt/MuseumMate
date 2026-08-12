@@ -223,8 +223,8 @@ Item {
 
     onVisibleChanged: {
         if (visible) {
-            if (typeof isHomePageVisibleGlobal !== "undefined") {
-                isHomePageVisibleGlobal = true;
+            if (typeof isHomePageVisible !== "undefined") {
+                isHomePageVisible = true;
             }
 
             // Verifica se há um código para ler pendente
@@ -240,9 +240,17 @@ Item {
                 })
             }
         } else {
-            if (typeof isHomePageVisibleGlobal !== "undefined") {
-                isHomePageVisibleGlobal = false;
+            if (typeof isHomePageVisible !== "undefined") {
+                isHomePageVisible = false;
             }
+        }
+    }
+
+    Component.onDestruction: {
+        // O Loader (WelcomePage.qml) destrói a HomePage diretamente ao trocar
+        // de sourceComponent, sem passar por onVisibleChanged(false) primeiro.
+        if (typeof isHomePageVisible !== "undefined") {
+            isHomePageVisible = false;
         }
     }
 
@@ -271,7 +279,23 @@ Item {
         currentFloor = itemData.mapIndex
 
         // --- Passo 2: Replicar o clique na Área ---
-        var areaIdx = itemData.areaIndex
+        // itemData.areaIndex é relativo ao piso (ver ApiHandler.js getItems);
+        // appDataHomePage.areas é uma lista global com todos os pisos seguidos,
+        // por isso é preciso converter para o índice global antes de o usar.
+        var areaIdx = -1
+        var relCount = 0
+        for (var a = 0; a < appDataHomePage.areas.length; a++) {
+            if (Number(appDataHomePage.areas[a].mapIndex) === Number(itemData.mapIndex)) {
+                if (relCount === itemData.areaIndex) {
+                    areaIdx = a
+                    break
+                }
+                relCount++
+            }
+        }
+
+        if (areaIdx === -1) return  // área não encontrada (não deve acontecer)
+
         var areaData = appDataHomePage.areas[areaIdx]
 
         selectedPinIndex = areaIdx
@@ -464,10 +488,13 @@ Item {
             return
         }
 
-        // Procura o item correspondente ao ID lido
+        // Procura o item correspondente ao ID lido.
+        // A tag NFC contém o documentId do Strapi (tal como o QR code lido pela
+        // câmara, ver ScannerPage.qml onTagFound) — não o "code" curto usado
+        // apenas na inserção manual pelo teclado numérico.
         var itemEncontrado = null
         for (var j = 0; j < appDataHomePage.items.length; j++) {
-            if (appDataHomePage.items[j] && String(appDataHomePage.items[j].code) === cleanTag) {
+            if (appDataHomePage.items[j] && String(appDataHomePage.items[j].documentId) === cleanTag) {
                 itemEncontrado = appDataHomePage.items[j]
                 break
             }

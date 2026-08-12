@@ -67,6 +67,32 @@
       "relation": "manyToOne",
       "target": "api::entidade.entidade",
       "inversedBy": "tours"
+    },
+    "isMainTour": {
+      "type": "boolean",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      },
+      "default": false
+    },
+    "audioTour": {
+      "type": "media",
+      "pluginOptions": {
+        "i18n": {
+          "localized": true
+        }
+      },
+      "multiple": false,
+      "allowedTypes": [
+        "audios"
+      ]
+    },
+    "areas": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::area.area"
     }
   }
 }

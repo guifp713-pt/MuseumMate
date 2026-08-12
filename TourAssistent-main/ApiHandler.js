@@ -1,8 +1,8 @@
 .import QtQuick.LocalStorage 2.0 as LS
 
 var cache = {}
-//var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
-var baseUrl = "http://10.211.93.27:1337" // ANDROID ESTAGIO
+var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
+//var baseUrl = "http://10.211.93.27:1337" // ANDROID ESTAGIO
 //var baseUrl = "http://192.168.5.175:1337/" // DESKTOP
 
 //var ACTIVE_ENTITY_DOCUMENT_ID = "gqag59gr2pvu95qawb4dq1ol"  //Industria Textil Norte
@@ -73,8 +73,52 @@ function openDb() {
         // corresponder a nenhuma leitura, só ocupavam espaço e acumulavam.
         // Um documentId real do Strapi tem ~25 caracteres.
         tx.executeSql("DELETE FROM cache WHERE length(documentId) > 64")
+        tx.executeSql("CREATE TABLE IF NOT EXISTS tour_progress(tourDocumentId TEXT PRIMARY KEY, stepType TEXT, stepDocumentId TEXT, updatedAt TEXT)")
     })
     return db
+}
+
+/* ================================
+   PROGRESSO DA VISITA GUIADA (local, por dispositivo)
+================================ */
+
+// Guarda o passo (item ou area) onde o visitante ficou, para poder retomar
+// mais tarde (spec.md US4). Nunca guarda o passo "intro".
+function saveTourProgress(tourDocumentId, stepType, stepDocumentId) {
+    if (!tourDocumentId || !stepDocumentId) return
+    var db = openDb()
+    db.transaction(function(tx) {
+        tx.executeSql(
+                    "INSERT OR REPLACE INTO tour_progress(tourDocumentId, stepType, stepDocumentId, updatedAt) VALUES(?, ?, ?, ?)",
+                    [tourDocumentId, stepType, stepDocumentId, new Date().toISOString()]
+                    )
+    })
+}
+
+// Lê o progresso guardado de uma tour. Devolve null se não existir nenhum.
+function getTourProgress(tourDocumentId) {
+    if (!tourDocumentId) return null
+    var db = openDb()
+    var resultado = null
+    db.transaction(function(tx) {
+        var rs = tx.executeSql("SELECT stepType, stepDocumentId FROM tour_progress WHERE tourDocumentId=?", [tourDocumentId])
+        if (rs.rows.length > 0) {
+            resultado = {
+                stepType: rs.rows.item(0).stepType,
+                stepDocumentId: rs.rows.item(0).stepDocumentId
+            }
+        }
+    })
+    return resultado
+}
+
+// Apaga o progresso guardado de uma tour (ao recomeçar ou ao concluir).
+function clearTourProgress(tourDocumentId) {
+    if (!tourDocumentId) return
+    var db = openDb()
+    db.transaction(function(tx) {
+        tx.executeSql("DELETE FROM tour_progress WHERE tourDocumentId=?", [tourDocumentId])
+    })
 }
 
 // Lê só a cache local (nunca acede à rede). Chama callback(dados) com o
@@ -108,7 +152,7 @@ function getCachedData(lang, callback) {
 // cache. callback(dados, errorReason): errorReason é null em sucesso,
 // "not_found" se a entidade configurada não existir, "offline" se a rede falhar.
 function fetchFromNetwork(lang, callback) {
-    var url = baseUrl + "/api/entidades?filters[documentId][$eq]=" + ACTIVE_ENTITY_DOCUMENT_ID + "&locale=" + lang + "&populate[dictionaries]=true&populate[imageEntity]=true&populate[audio]=true&populate[tours][populate][imageTour]=true&populate[tours][populate][items][populate][coverItem]=true&populate[tours][populate][items][populate][audioItem]=true&populate[maps][populate][imageMap]=true&populate[maps][populate][areas][populate][imageArea]=true&populate[maps][populate][areas][populate][audioArea]=true&populate[maps][populate][areas][populate][items][populate][coverItem]=true&populate[maps][populate][areas][populate][items][populate][audioItem]=true&populate[maps][populate][areas][populate][items][populate][qrCodeImage]=true"
+    var url = baseUrl + "/api/entidades?filters[documentId][$eq]=" + ACTIVE_ENTITY_DOCUMENT_ID + "&locale=" + lang + "&populate[dictionaries]=true&populate[imageEntity]=true&populate[audio]=true&populate[tours][populate][imageTour]=true&populate[tours][populate][audioTour]=true&populate[tours][populate][items][populate][coverItem]=true&populate[tours][populate][items][populate][audioItem]=true&populate[tours][populate][items][populate][area]=true&populate[tours][populate][areas][populate][imageArea]=true&populate[tours][populate][areas][populate][audioArea]=true&populate[maps][populate][imageMap]=true&populate[maps][populate][areas][populate][imageArea]=true&populate[maps][populate][areas][populate][audioArea]=true&populate[maps][populate][areas][populate][items][populate][coverItem]=true&populate[maps][populate][areas][populate][items][populate][audioItem]=true&populate[maps][populate][areas][populate][items][populate][qrCodeImage]=true"
     console.log(" URL chamada:", url)
 
     var xhr = new XMLHttpRequest()
@@ -232,6 +276,8 @@ function getAreas(dados, localPath) {
                     var imgPath = area.imageArea?.data?.attributes?.url || area.imageArea?.url;
                     var audioPath = (area.audioArea?.data?.attributes?.url) || area.audioArea?.url;
                     areas.push({
+                                   "id": area.id || 0,
+                                   "documentId": area.documentId || "",
                                    "nameArea": area.nameArea || "",
                                    "subtitleArea": area.subtitleArea || "",
                                    "descriptionArea": area.descriptionArea || "",
@@ -374,6 +420,8 @@ function getTourItems(dados, tourRef, localPath) {
 
         var audioPath = (data.audioItem?.data?.attributes?.url) || data.audioItem?.url;
 
+        var areaRaw = data.area?.data?.attributes ? data.area.data.attributes : (data.area?.data || data.area);
+
         items.push({
                        id: data.id || 0,
                        documentId: data.documentId || "",
@@ -383,11 +431,65 @@ function getTourItems(dados, tourRef, localPath) {
                        posYItem: data.posYItem || 0,
                        code: data.code || "",
                        coverUrlItem: resolveUrl(imgPath, localPath),
-                       audioItem: resolveUrl(audioPath, localPath)
+                       audioItem: resolveUrl(audioPath, localPath),
+                       areaDocumentId: areaRaw?.documentId || ""
                    });
     }
 
     return items;
+}
+
+/* ================================
+   TOUR AREAS
+================================ */
+
+function getTourAreas(dados, tourRef, localPath) {
+    var areas = [];
+
+    var entidade = getRootEntity(dados);
+    if (!entidade || !entidade.tours) return areas;
+
+    var tours = Array.isArray(entidade.tours)
+            ? entidade.tours
+            : entidade.tours.data || [];
+
+    var tour = null;
+
+    for (var i = 0; i < tours.length; i++) {
+        var t = tours[i];
+        var data = t.attributes ? t.attributes : t;
+
+        if (data.id === tourRef || data.documentId === tourRef) {
+            tour = data;
+            break;
+        }
+    }
+
+    if (!tour || !tour.areas) return areas;
+
+    var rawAreas = Array.isArray(tour.areas)
+            ? tour.areas
+            : tour.areas.data || [];
+
+    for (var i = 0; i < rawAreas.length; i++) {
+        var area = rawAreas[i];
+        var data = area.attributes ? area.attributes : area;
+
+        var imgPath = data.imageArea?.data?.attributes?.url || data.imageArea?.url || "";
+        var audioPath = (data.audioArea?.data?.attributes?.url) || data.audioArea?.url;
+
+        areas.push({
+                       id: data.id || 0,
+                       documentId: data.documentId || "",
+                       nameArea: data.nameArea || "",
+                       subtitleArea: data.subtitleArea || "",
+                       descriptionArea: data.descriptionArea || "",
+                       imageAreaUrl: resolveUrl(imgPath, localPath),
+                       audioArea: resolveUrl(audioPath, localPath)
+                   });
+    }
+
+    return areas;
 }
 /*==============================================TOURS===========================================================================================*/
 
@@ -421,6 +523,11 @@ function getTours(dados, localPath) {
                 data.imageTour?.url ||
                 "";
 
+        var audioPath =
+                data.audioTour?.data?.attributes?.url ||
+                data.audioTour?.url ||
+                "";
+
         tours.push({
                        id: data.id || 0,
                        documentId: data.documentId || "",
@@ -428,6 +535,8 @@ function getTours(dados, localPath) {
                        timeTour: data.timeTour || "",
                        descriptionTour: data.descriptionTour || "",
                        imageTour: resolveUrl(imgPath, localPath),
+                       audioTour: resolveUrl(audioPath, localPath),
+                       isMainTour: data.isMainTour === true,
                        totalStops: totalParagens
                    });
     }
@@ -453,6 +562,112 @@ function getAllTourItems(dados, localPath) {
 
         // Reutiliza a sua função getTourItems existente para cada tour individual
         result[tourId] = getTourItems(dados, tourId, localPath);
+    }
+
+    return result;
+}
+
+/* ================================
+   SEQUÊNCIA DA VISITA GUIADA (intro + item + area)
+================================ */
+
+// Função pura: dado um tour (com nameTour/descriptionTour/imageTour/audioTour
+// já resolvidos), os seus items (com areaDocumentId) e as areas associadas à
+// tour, devolve a sequência ordenada de "passos" a apresentar na TourPage.
+function buildTourSequence(tour, tourItems, tourAreas) {
+    var steps = [];
+
+    var areasById = {};
+    for (var a = 0; a < (tourAreas || []).length; a++) {
+        if (tourAreas[a] && tourAreas[a].documentId) {
+            areasById[tourAreas[a].documentId] = tourAreas[a];
+        }
+    }
+
+    if (tour && tour.audioTour) {
+        steps.push({
+                       type: "intro",
+                       documentId: tour.documentId || "",
+                       title: tour.nameTour || "",
+                       description: tour.descriptionTour || "",
+                       imageUrl: tour.imageTour || "",
+                       audioUrl: tour.audioTour || "",
+                       code: null,
+                       stopNumber: null
+                   });
+    }
+
+    var lastAreaDocumentId = null;
+    var stopNumber = 0;
+    var items = tourItems || [];
+
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var itemAreaId = item.areaDocumentId || "";
+
+        if (itemAreaId && itemAreaId !== lastAreaDocumentId && areasById[itemAreaId]) {
+            var area = areasById[itemAreaId];
+            stopNumber++;
+            steps.push({
+                           type: "area",
+                           documentId: area.documentId,
+                           title: area.nameArea || "",
+                           description: [area.subtitleArea, area.descriptionArea].filter(function (s) { return !!s; }).join(" — "),
+                           imageUrl: area.imageAreaUrl || "",
+                           audioUrl: area.audioArea || "",
+                           code: null,
+                           stopNumber: stopNumber
+                       });
+        }
+
+        if (itemAreaId) {
+            lastAreaDocumentId = itemAreaId;
+        }
+
+        stopNumber++;
+        steps.push({
+                       type: "item",
+                       documentId: item.documentId,
+                       title: item.nameItem || "",
+                       description: item.descriptionItem || "",
+                       imageUrl: item.coverUrlItem || "",
+                       audioUrl: item.audioItem || "",
+                       code: item.code || "",
+                       stopNumber: stopNumber
+                   });
+    }
+
+    return steps;
+}
+
+// Nova função para pré-calcular a sequência guiada (intro/item/area) de todos
+// os tours de uma vez, na mesma forma que getAllTourItems.
+function getAllTourSteps(dados, localPath) {
+    var result = {};
+    var entidade = getRootEntity(dados);
+
+    if (!entidade || !entidade.tours) return result;
+
+    var tours = Array.isArray(entidade.tours)
+            ? entidade.tours
+            : (entidade.tours.data || []);
+
+    var toursById = {};
+    var toursList = getTours(dados, localPath);
+    for (var k = 0; k < toursList.length; k++) {
+        toursById[toursList[k].documentId] = toursList[k];
+    }
+
+    for (var i = 0; i < tours.length; i++) {
+        var t = tours[i];
+        var data = t.attributes || t;
+        var tourId = data.documentId || data.id;
+
+        var tourItems = getTourItems(dados, tourId, localPath);
+        var tourAreas = getTourAreas(dados, tourId, localPath);
+        var tourMeta = toursById[tourId] || null;
+
+        result[tourId] = buildTourSequence(tourMeta, tourItems, tourAreas);
     }
 
     return result;
@@ -487,6 +702,13 @@ function extractMediaUrls(dados) {
                     tour.imageTour?.url;
 
             if (tourImg) urls.push(tourImg);
+
+            // Áudio de introdução do Tour
+            var tourAudio =
+                    tour.audioTour?.data?.attributes?.url ||
+                    tour.audioTour?.url;
+
+            if (tourAudio) urls.push(tourAudio);
 
             // --- Percorrer Itens do Tour ---
             if (tour.items && Array.isArray(tour.items)) {

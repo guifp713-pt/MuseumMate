@@ -5,6 +5,7 @@ import QtQuick.Layouts 1.15
 import Qt5Compat.GraphicalEffects
 import QtMultimedia
 import QZXing
+import "ApiHandler.js" as Api
 
 Item {
     id: root
@@ -15,6 +16,7 @@ Item {
 
         Component.onDestruction: {
             shutdownScanner()
+            AudioBridge.stopAudio()
         }
 
         // Deixa o onVisibleChanged apenas para segurança
@@ -27,29 +29,56 @@ Item {
     // =========================================================================
     // --- LÓGICA DE DADOS (VERSÃO NOVA) ---
     property string linguaSelecionadaTourPage: ""
+    // Recebido explicitamente de Tours.qml (root.sessionId de main.qml) — este
+    // Item chama-se também "root", por isso "root.sessionId" dentro deste
+    // ficheiro resolveria para si próprio (sem essa propriedade) em vez do
+    // valor de main.qml, deixando o assistente sem sessionId válido.
+    property string sessionId: ""
     property var appDataTourPage: ({})
     property var itemsGlobal: []
     property var tourInfo: null // Objeto do tour selecionado
+    property int valorContadorEffect: 20
+    property int valorFinalAnimation: chatButtonIA.width + valorContadorEffect
+    property int valorInicialAnimation: recChatButtonEffect.width
 
-    // Filtra os itens do tour selecionado automaticamente
-    property var tourInfoItem: (tourInfo && appDataTourPage.tourItem)
-                               ? appDataTourPage.tourItem[tourInfo.documentId || tourInfo.id] || []
-                               : []
+    // Sequência guiada da tour (passos "intro"/"item"/"area"), pré-calculada
+    // em main.qml (appData.tourSteps) via ApiHandler.js buildTourSequence().
+    // Substitui a antiga "tourInfoItem" (só items).
+    property var steps: (tourInfo && appDataTourPage.tourSteps)
+                        ? appDataTourPage.tourSteps[tourInfo.documentId || tourInfo.id] || []
+                        : []
 
+    // contadorParagens continua a ser a posição 1-indexed dentro do array
+    // atual (agora "steps" em vez de "tourInfoItem"); dirige a navegação
+    // Anterior/Próximo tal como antes.
     property int contadorParagens: 1
-    property int valorEstaticoStop: tourInfo ? tourInfo.totalStops : 0
+    property int valorEstaticoStop: steps.length
 
-    // Cálculos de progresso da versão antiga
-    property int valorAtualStop: tourInfo ? tourInfo.totalStops : 0
-    property int valorFinalStop: (valorAtualStop - (contadorParagens - 1)) || 1
-
-    // Item atual baseado na paragem
-    property var currentItem: (tourInfoItem.length > 0)
-                              ? tourInfoItem[Math.min(contadorParagens - 1, tourInfoItem.length - 1)]
+    // Passo atual (pode ser "intro", "item" ou "area")
+    property var currentStep: (steps.length > 0)
+                              ? steps[Math.min(contadorParagens - 1, steps.length - 1)]
                               : null
+
+    // Número de paragens visíveis ao utilizador (exclui o passo "intro", que
+    // não conta para a numeração "Paragem N" nem para a barra/pontos de
+    // progresso — ver research.md §3)
+    property int totalDisplaySteps: {
+        var count = 0
+        for (var i = 0; i < steps.length; i++) {
+            if (steps[i] && steps[i].stopNumber !== null && steps[i].stopNumber !== undefined) {
+                count++
+            }
+        }
+        return count
+    }
+
+    // --- RETOMAR PROGRESSO (US4) ---
+    property bool showResumeDialog: false
+    property int pendingResumeIndex: -1
 
     property int valorLista: 0
     property int valorExplorar: 0
+    property int chatIAPageVisible: 0
     property bool qrScannerVisible: false
     property var number: ["", "", "", ""]
     property int currentIndex: 0
@@ -70,13 +99,21 @@ Item {
 
         // Quando o C++ mudar a faixa, sincroniza a UI
         function onCurrentTrackChanged(index, url) {
-            contadorParagens = index + 1
-            isAudioPlaying = true
+            // Só a playlist da própria tour deve mover o passo atual — a
+            // reprodução isolada de um item (NFC/QR/código) usa sempre uma
+            // playlist de 1 elemento e não pode alterar contadorParagens,
+            // ou a visita guiada perde o sítio onde o visitante estava.
+            if (!getItem.visible) {
+                contadorParagens = index + 1
+            }
+            // FR-009b: um passo sem áudio (url vazio) fica em silêncio — não
+            // mostrar o estado/animação de "a tocar" quando não há nada a tocar.
+            isAudioPlaying = (url !== "" && url !== undefined && url !== null)
             saveAudio = url
         }
 
         function onAudioPositionChanged(position, duration) {
-                if (!dragArea_Item.pressed) {
+                if (!dragArea_Item.pressed && !dragArea_Global.pressed) {
                     root.fakePosition = position      // Se a sua barra usa fakePosition, atualize aqui
                     root.fakeDuration = duration
                     root.audioPosition = position    // Atualize ambos ou remova os duplicados
@@ -85,192 +122,185 @@ Item {
             }
     }
 
-    // --- LIGAÇÃO NFC (ISOLADA PARA A TOUR PAGE) ---
-        Connections {
-            target: typeof NfcManager !== "undefined" ? NfcManager : null
+    // Mantém o passo atual sempre visível no modo lista, mesmo em tours
+    // longas (US5/FR-007) — sem isto o ListView não faz scroll sozinho.
+    onContadorParagensChanged: {
+        Qt.callLater(function() {
+            scrollAreaLista.positionViewAtIndex(contadorParagens - 1, ListView.Contain)
+        })
+    }
 
-            // O parâmetro 'tagCode' é o valor ("3342") que o C++ acaba de enviar
-            function onTagDetected(tagCode) {
-
-                // PROTEÇÃO DE CONTEXTO: Só executa se a página das Visitas Guiadas estiver visível
-                if (!root.visible) {
-                    console.log("NFC QML (TourPage): Tag ignorada porque a TourPage não está visível.")
-                    return;
+    // Ao abrir a TourPage: se houver progresso guardado e ainda válido para
+    // esta sequência, mostra o diálogo de retomar (US4) em vez de arrancar
+    // logo a reprodução; caso contrário, começa no passo 1 (intro, se
+    // existir) e toca o respetivo áudio automaticamente (US1).
+    Component.onCompleted: {
+        var tourId = tourInfo ? (tourInfo.documentId || tourInfo.id) : null
+        if (tourId) {
+            var progress = Api.getTourProgress(tourId)
+            if (progress) {
+                var idx = -1
+                for (var i = 0; i < steps.length; i++) {
+                    if (steps[i].type === progress.stepType && steps[i].documentId === progress.stepDocumentId) {
+                        idx = i
+                        break
+                    }
                 }
-
-                // Lê diretamente o parâmetro enviado pelo C++ (e não o teclado root.number)
-                var cleanTag = String(tagCode).trim()
-                console.log("NFC QML (TourPage): Sinal detetado =", cleanTag)
-
-                // SOLUÇÃO CRÍTICA: Qt.callLater para manter a sincronia da thread UI
-                Qt.callLater(function() {
-                    var found = false
-                    var foundItemGlobal = false
-
-                    // 1. Procura o item na tour atual usando o "code"
-                    for (var i = 0; i < tourInfoItem.length; i++) {
-                        // Forçamos para String caso a API envie o code como Inteiro
-                        if (String(tourInfoItem[i].code) === cleanTag) {
-                            found = true
-                            contadorParagens = i + 1
-                            valorLista = 1
-                            valorExplorar = 1
-
-                            playCurrentAudio()
-
-                            // Garante que fecha a UI do scanner caso esteja aberta
-                            cameraTour.active = false
-                            scannerPageTour.visible = false
-                            txtDetectQrCodeTour.visible = false
-                            rowCode.visible = false
-                            colCode.visible = false
-                            gridNumbersCode.visible = false
-                            getItem.visible = false
-
-                            successEffectTour.play()
-                            console.log("NFC QML (TourPage): Item encontrado na Tour!")
-                            break
-                        }
-                    }
-
-                    // 2. Se não encontrou na tour, verifica globalmente na app usando o "code"
-                    if (!found) {
-                        for (let j = 0; j < appDataTourPage.items.length; j++) {
-                            if (String(appDataTourPage.items[j].code) === cleanTag) {
-                                var globalItem = appDataTourPage.items[j]
-                                root.foundGlobalItem = globalItem
-
-                                AudioBridge.stopAudio()
-                                AudioBridge.setPlaylist([globalItem.audioItem], 0)
-                                AudioBridge.startAudio(globalItem.audioItem)
-
-                                isAudioPlaying = true
-                                root.isAudioPlaying = true
-                                foundItemGlobal = true
-                                getItem.visible = true
-
-                                // Garante que fecha a UI do scanner caso esteja aberta
-                                cameraTour.active = false
-                                scannerPageTour.visible = false
-                                txtDetectQrCodeTour.visible = false
-                                rowCode.visible = false
-                                colCode.visible = false
-                                gridNumbersCode.visible = false
-
-                                successEffectTour.play()
-                                console.log("NFC QML (TourPage): Item encontrado Globalmente! (Fora da tour)")
-                                break
-                            }
-                        }
-                    }
-
-                    // 3. Se o ID não existe em lado nenhum
-                    if (!found && !foundItemGlobal) {
-                        cameraTour.active = false
-                        scannerPageTour.visible = false
-                        txtDetectQrCodeTour.visible = false
-                        rowCode.visible = false
-                        colCode.visible = false
-                        gridNumbersCode.visible = false
-
-                        errorEffectTour.playError()
-                        console.log("NFC QML (TourPage): Erro, nenhum item corresponde ao código:", cleanTag)
-                    }
-                });
+                if (idx >= 0) {
+                    pendingResumeIndex = idx
+                    showResumeDialog = true
+                    return
+                }
+                // Passo guardado já não existe no catálogo atual (FR-013) — descarta e recomeça.
+                Api.clearTourProgress(tourId)
             }
         }
+        // Início "de fresco": só toca automaticamente quando há introdução
+        // (US1) — sem introdução configurada, o primeiro item mantém o
+        // comportamento existente (o visitante toca em play manualmente).
+        if (currentStep && currentStep.type === "intro") {
+            playCurrentAudio()
+        }
+    }
+
+    function resumeSavedProgress() {
+        if (pendingResumeIndex >= 0) {
+            contadorParagens = pendingResumeIndex + 1
+        }
+        showResumeDialog = false
+        playCurrentAudio()
+    }
+
+    function restartTourFromBeginning() {
+        var tourId = tourInfo ? (tourInfo.documentId || tourInfo.id) : null
+        if (tourId) {
+            Api.clearTourProgress(tourId)
+        }
+        contadorParagens = 1
+        showResumeDialog = false
+        playCurrentAudio()
+    }
+
+    // --- LEITURA DE ITEM POR NFC/QR/CÓDIGO (ISOLADA PARA A TOUR PAGE) ---
+    // NFC, QR code e código manual apontam sempre para a mesma vista isolada
+    // (ver "getItem" mais abaixo), quer o item pertença à tour em curso quer
+    // não — nunca saltam para a posição do item dentro da tour, para não
+    // perder o andamento/passo atual da visita guiada.
+    function hideScannerUiTour() {
+        cameraTour.active = false
+        scannerPageTour.visible = false
+        txtDetectQrCodeTour.visible = false
+        rowCode.visible = false
+        colCode.visible = false
+        gridNumbersCode.visible = false
+    }
+
+    function showIsolatedItem(item) {
+        root.foundGlobalItem = item
+        getItem.visible = true
+
+        AudioBridge.stopAudio()
+        // Playlist isolada de 1 item — nunca a da tour — para que o
+        // Anterior/Próximo da notificação não interfira com contadorParagens
+        // (ver onCurrentTrackChanged) e para a notificação mostrar os dados
+        // corretos deste item (não os do passo da tour que estava a tocar).
+        AudioBridge.setPlaylist([item.audioItem], 0, [item.nameItem], [item.coverUrlItem], item.nameItem)
+        AudioBridge.startAudio(item.audioItem)
+        root.isAudioPlaying = true
+        root.isAudioPaused = false
+
+        hideScannerUiTour()
+        successEffectTour.play()
+    }
+
+    function findItemByDocumentId(docId) {
+        for (var i = 0; i < appDataTourPage.items.length; i++) {
+            if (String(appDataTourPage.items[i].documentId) === String(docId)) {
+                return appDataTourPage.items[i]
+            }
+        }
+        return null
+    }
+
+    function findItemByCode(code) {
+        for (var i = 0; i < appDataTourPage.items.length; i++) {
+            if (appDataTourPage.items[i].code === code) {
+                return appDataTourPage.items[i]
+            }
+        }
+        return null
+    }
+
+    Connections {
+        target: typeof NfcManager !== "undefined" ? NfcManager : null
+
+        // O parâmetro 'tagCode' é o valor ("3342") que o C++ acaba de enviar
+        function onTagDetected(tagCode) {
+
+            // PROTEÇÃO DE CONTEXTO: Só executa se a página das Visitas Guiadas estiver visível
+            if (!root.visible) {
+                console.log("NFC QML (TourPage): Tag ignorada porque a TourPage não está visível.")
+                return;
+            }
+
+            // Lê diretamente o parâmetro enviado pelo C++ (e não o teclado root.number)
+            var cleanTag = String(tagCode).trim()
+            console.log("NFC QML (TourPage): Sinal detetado =", cleanTag)
+
+            // SOLUÇÃO CRÍTICA: Qt.callLater para manter a sincronia da thread UI
+            Qt.callLater(function() {
+                var item = findItemByDocumentId(cleanTag)
+                if (item) {
+                    showIsolatedItem(item)
+                    console.log("NFC QML (TourPage): Item encontrado!")
+                } else {
+                    hideScannerUiTour()
+                    errorEffectTour.playError()
+                    console.log("NFC QML (TourPage): Erro, nenhum item corresponde ao código:", cleanTag)
+                }
+            });
+        }
+    }
 
 
     function checkManualCode() {
         var code = root.number.join("").trim()
-        var found = false
-        var foundItemGlobal = false
+        var item = findItemByCode(code)
 
-        // Primeiro: percorre TODOS os itens da tour
-        for (var i = 0; i < tourInfoItem.length; i++) {
-            if (tourInfoItem[i].code === code) {
-                found = true
-                contadorParagens = i + 1
-                valorLista = 1
-                valorExplorar = 1
-
-                Qt.callLater(function() { playCurrentAudio() })
-
-                cameraTour.active = false
-                scannerPageTour.visible = false
-                txtDetectQrCodeTour.visible = false
-                rowCode.visible = false
-                colCode.visible = false
-                gridNumbersCode.visible = false
-                getItem.visible = false
-
-                root.number = ["", "", "", ""]
-                root.currentIndex = 0
-                successEffectTour.play()
-                break
-            }
-        }
-
-        // Só depois, SE não encontrou na tour, verifica globalmente
-        if (!found) {
-            for (let j = 0; j < appDataTourPage.items.length; j++) {
-                if (appDataTourPage.items[j].code === code) {
-                    var globalItem = appDataTourPage.items[j]
-                    root.foundGlobalItem = globalItem
-
-                    // ALTERAÇÃO NATIVA: Para o áudio antigo e arranca o áudio global via C++
-                    AudioBridge.stopAudio()
-                    AudioBridge.startAudio(globalItem.audioItem)
-                    isAudioPlaying = true
-
-                    foundItemGlobal = true
-                    getItem.visible = true
-
-                    cameraTour.active = false
-                    scannerPageTour.visible = false
-                    txtDetectQrCodeTour.visible = false
-                    rowCode.visible = false
-                    colCode.visible = false
-                    gridNumbersCode.visible = false
-
-                    root.number = ["", "", "", ""]
-                    root.currentIndex = 0
-                    successEffectTour.play()
-                    break
-                }
-            }
-        }
-
-        // Se não encontrou em lado nenhum
-        if (!found && !foundItemGlobal) {
-            cameraTour.active = false
-            scannerPageTour.visible = false
-            txtDetectQrCodeTour.visible = false
-            rowCode.visible = false
-            colCode.visible = false
-            gridNumbersCode.visible = false
-            root.number = ["", "", "", ""]
-            root.currentIndex = 0
+        if (item) {
+            showIsolatedItem(item)
+        } else {
+            hideScannerUiTour()
             errorEffectTour.playError()
         }
+
+        root.number = ["", "", "", ""]
+        root.currentIndex = 0
     }
 
     function playCurrentAudio() {
         AudioBridge.stopAudio()
-        if (currentItem && currentItem.audioItem) {
+        if (currentStep && currentStep.audioUrl) {
 
             var urls = [];
-            for (var i = 0; i < tourInfoItem.length; i++) {
-                urls.push(tourInfoItem[i].audioItem || "");
+            var titles = [];
+            var covers = [];
+            for (var i = 0; i < steps.length; i++) {
+                urls.push(steps[i].audioUrl || "");
+                titles.push(steps[i].title || "");
+                covers.push(steps[i].imageUrl || "");
             }
-            AudioBridge.setPlaylist(urls, contadorParagens - 1);
+            var tourName = tourInfo ? (tourInfo.nameTour || "") : "";
+            AudioBridge.setPlaylist(urls, contadorParagens - 1, titles, covers, tourName);
 
             // Iniciar áudio no Foreground Service do Android via C++
-            AudioBridge.startAudio(currentItem.audioItem)
+            AudioBridge.startAudio(currentStep.audioUrl)
             isAudioPlaying = true
-            saveAudio = currentItem.audioItem
-            console.log("PLAY NATIVE AUDIO:", currentItem.audioItem)
+            saveAudio = currentStep.audioUrl
+            console.log("PLAY NATIVE AUDIO:", currentStep.audioUrl)
         } else {
+            // Passo sem áudio disponível (ex.: falha de download): mostra-se
+            // o passo normalmente, sem bloquear nem assinalar erro (FR-014).
             isAudioPlaying = false
             console.log("SEM AUDIO")
         }
@@ -315,15 +345,22 @@ Item {
             font.letterSpacing: 1.5
             font.capitalization: Font.AllUppercase
             color: "#9CA3AF"
+            wrapMode: Text.WordWrap
             anchors.left: parent.left
             anchors.leftMargin: 20
+            // Nunca passa por baixo do botão de QR code — quando o nome é
+            // grande, quebra para a linha seguinte em vez de ficar coberto.
+            anchors.right: qrButtonTourPage.left
+            anchors.rightMargin: 10
             anchors.top: parent.top
             anchors.topMargin: 35
         }
 
         Text {
             id: txtParagemContador
-            text: (appDataTourPage.dictionary["tourPageStop"] || "Paragem") + " " + contadorParagens
+            text: (currentStep && currentStep.type === "intro")
+                  ? (appDataTourPage.dictionary["tourPageIntro"] || "Introdução")
+                  : (appDataTourPage.dictionary["tourPageStop"] || "Paragem") + " " + (currentStep ? currentStep.stopNumber : 0)
             font.pixelSize: 10
             font.family: "Sans-Serif"
             color: "#4B5563"
@@ -361,6 +398,17 @@ Item {
                     AudioBridge.stopAudio()
                     isAudioPlaying = false
 
+                    // Guarda o progresso se a visita ficou a meio; limpa-o se
+                    // já tinha chegado ao último passo (FR-009/FR-012).
+                    var tourId = tourInfo ? (tourInfo.documentId || tourInfo.id) : null
+                    if (tourId) {
+                        if (contadorParagens >= valorEstaticoStop) {
+                            Api.clearTourProgress(tourId)
+                        } else if (currentStep && currentStep.type !== "intro") {
+                            Api.saveTourProgress(tourId, currentStep.type, currentStep.documentId)
+                        }
+                    }
+
                     back()
                     recTours.visible = true
                 }
@@ -380,7 +428,9 @@ Item {
 
             Rectangle {
                 id: progressBar
-                width: valorEstaticoStop > 0 ? (contadorParagens / valorEstaticoStop) * parent.width : 0
+                width: (totalDisplaySteps > 0 && currentStep && currentStep.stopNumber)
+                       ? (currentStep.stopNumber / totalDisplaySteps) * parent.width
+                       : 0
                 height: parent.height
                 radius: parent.radius; color: "#D4AF37"
                 Behavior on width { NumberAnimation { duration: 200 } }
@@ -395,11 +445,11 @@ Item {
             spacing: 10
 
             Repeater {
-                model: valorEstaticoStop
+                model: totalDisplaySteps
                 delegate: Rectangle {
-                    width: (contadorParagens - 1) === index ? 20 : 5
+                    width: (((currentStep && currentStep.stopNumber) || 0) - 1) === index ? 20 : 5
                     height: 5; radius: 50
-                    color: (contadorParagens - 1) >= index ? "#D4AF37" : "#9CA3AF"
+                    color: (((currentStep && currentStep.stopNumber) || 0) - 1) >= index ? "#D4AF37" : "#9CA3AF"
 
                     Behavior on width {
                         NumberAnimation {
@@ -504,81 +554,90 @@ Item {
             }
         }
 
-        Flickable {
+        ListView {
             id: scrollAreaLista
             anchors.top: recSelectMode.bottom
             anchors.topMargin: 20
             anchors.bottom: parent.bottom
             anchors.bottomMargin: miniPlayer.visible ? (miniPlayer.height + 30) : 20
             width: parent.width
-            contentHeight: contentColumnList.height
             clip: true
             visible: valorLista === 0
-            flickableDirection: Flickable.VerticalFlick
+            spacing: 15
+            model: steps
+            currentIndex: contadorParagens - 1
 
-            Column {
-                id: contentColumnList
-                width: parent.width
-                spacing: 15
+            delegate: Rectangle {
+                id: recList
+                width: scrollAreaLista.width - 40
+                // Acompanha o conteúdo (nunca mais pequeno que a imagem) para
+                // um título com várias linhas nunca ficar cortado/sobreposto.
+                height: Math.max(100, recListColumn.implicitHeight + 20)
+                radius: 10
+                border.width: 2
+                border.color: (contadorParagens - 1) === index ? "#D4AF37" : "#F3F4F6"
+                color: "#F3F4F6"
+                opacity: 1
+                anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
 
-                Repeater {
-                    model: tourInfoItem
-                    delegate: Rectangle {
-                        id: recList
-                        width: parent.width - 40
-                        height: 100
-                        radius: 10
-                        border.width: 2
-                        border.color: (contadorParagens - 1) === index ? "#D4AF37" : "#F3F4F6"
-                        color: "#F3F4F6"
-                        opacity: 1
-                        anchors.horizontalCenter: parent.horizontalCenter
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    spacing: 10
 
-                        Row {
-                            anchors.fill: parent
-                            anchors.margins: 10
-                            spacing: 10
+                    Image {
+                        source: modelData.imageUrl
+                        width: 80
+                        height: 80
+                        fillMode: Image.PreserveAspectCrop
+                    }
 
-                            Image {
-                                source: modelData.coverUrlItem
-                                width: 80
-                                height: 80
-                                fillMode: Image.PreserveAspectCrop
-                            }
+                    Column {
+                        id: recListColumn
+                        spacing: 5
+                        width: parent.width - 100
 
-                            Column {
-                                spacing: 5
-                                width: parent.width - 100
-
-                                Text {
-                                    text: modelData.nameItem
-                                    font.pixelSize: 16
-                                    font.bold: true
-                                    color: "#111827"
-                                }
-
-                                Text {
-                                    text: modelData.descriptionItem
-                                    font.pixelSize: 12
-                                    color: "#6B7280"
-                                    maximumLineCount: 2
-                                    elide: Text.ElideRight
-                                    wrapMode: Text.WordWrap
-                                    width: parent.width
-                                }
-                            }
+                        Text {
+                            visible: modelData.type !== "item"
+                            text: modelData.type === "intro"
+                                  ? (appDataTourPage.dictionary["tourPageIntro"] || "Introdução")
+                                  : (appDataTourPage.dictionary["tourPageAreaLabel"] || "Area")
+                            font.pixelSize: 10
+                            font.bold: true
+                            font.letterSpacing: 1
+                            font.capitalization: Font.AllUppercase
+                            color: "#D4AF37"
                         }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-                                valorLista = 1
-                                valorExplorar = 1
-                                if (contadorParagens !== index + 1) {   // só age se for item diferente
-                                    contadorParagens = index + 1
-                                    playCurrentAudio()
-                                }
-                            }
+                        Text {
+                            text: modelData.title
+                            font.pixelSize: 16
+                            font.bold: true
+                            color: "#111827"
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+
+                        Text {
+                            text: modelData.description
+                            font.pixelSize: 12
+                            color: "#6B7280"
+                            maximumLineCount: 2
+                            elide: Text.ElideRight
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        valorLista = 1
+                        valorExplorar = 1
+                        if (contadorParagens !== index + 1) {   // só age se for passo diferente
+                            contadorParagens = index + 1
+                            playCurrentAudio()
                         }
                     }
                 }
@@ -591,7 +650,10 @@ Item {
             anchors.top: recSelectMode.bottom
             anchors.topMargin: 10
             anchors.bottom: parent.bottom
-            anchors.bottomMargin: miniPlayer.visible ? 65 : 20
+            // Reserva sempre espaço suficiente para o miniPlayer OU para os
+            // botões de navegação (Anterior/Próximo), consoante o que estiver
+            // visível, para o texto nunca ficar tapado (US5/FR-008).
+            anchors.bottomMargin: miniPlayer.visible ? 65 : (nextStop.height + 40)
             contentHeight: contentColumn.height
             clip: true
             visible: valorExplorar === 1
@@ -603,12 +665,29 @@ Item {
                 spacing: 20
                 bottomPadding: 20
 
+                // Título acima da imagem (fora dela, para nunca ficar difícil
+                // de ler por cima da foto) — quebra para a linha seguinte em
+                // vez de sair do ecrã quando é longo (US5).
+                Text {
+                    text: currentStep ? currentStep.title : ""
+                    width: parent.width - 40
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    font.pixelSize: 20
+                    font.family: "Times New Roman"
+                    font.weight: Font.Light
+                    font.letterSpacing: 1.2
+                    font.capitalization: Font.AllUppercase
+                    color: "#111827"
+                    wrapMode: Text.WordWrap
+                    renderType: Text.NativeRendering
+                }
+
                 Item {
                     width: parent.width
                     height: 250
                     Image {
                         id: imgItems
-                        source: currentItem ? currentItem.coverUrlItem : ""
+                        source: currentStep ? currentStep.imageUrl : ""
                         width: parent.width - 40
                         height: 250
                         fillMode: Image.PreserveAspectCrop
@@ -623,21 +702,6 @@ Item {
                                 radius: 15
                             }
                         }
-                    }
-
-                    Text {
-                        text: currentItem ? currentItem.nameItem : ""
-                        font.pixelSize: 20
-                        font.family: "Times New Roman"
-                        font.weight: Font.Light
-                        font.letterSpacing: 1.2
-                        font.capitalization: Font.AllUppercase
-                        color: "white"
-                        renderType: Text.NativeRendering
-                        anchors.left: imgItems.left
-                        anchors.leftMargin: 20
-                        anchors.bottom: imgItems.bottom
-                        anchors.bottomMargin: 20
                     }
                 }
 
@@ -702,8 +766,8 @@ Item {
                                         if (root.isAudioPaused) {
                                             AudioBridge.resumeAudio() // Retorna exatamente de onde parou
                                         } else {
-                                            if (currentItem && currentItem.audioItem) {
-                                                    AudioBridge.startAudio(currentItem.audioItem)
+                                            if (currentStep && currentStep.audioUrl) {
+                                                    AudioBridge.startAudio(currentStep.audioUrl)
                                                 }
                                         }
                                         root.isAudioPlaying = true
@@ -790,8 +854,8 @@ Item {
                                         let newPos = percentage * root.fakeDuration
                                         root.fakePosition = newPos
 
-                                        // NOTIFICA O C++ (Adicione esta linha se tiver o método implementado no .h)
-                                        AudioBridge.seek(newPos)
+                                        // NOTIFICA O C++
+                                        AudioBridge.seekTo(Math.round(newPos))
                                     }
                                 }
                             }
@@ -803,7 +867,7 @@ Item {
                                     let percentage = mouse.x / width
                                     let newPos = percentage * root.fakeDuration
                                     root.fakePosition = newPos
-                                    AudioBridge.seek(newPos) // <--- Envia para o C++
+                                    AudioBridge.seekTo(Math.round(newPos)) // <--- Envia para o C++
                                 }
                             }
                         }
@@ -830,7 +894,7 @@ Item {
 
                 // --- DESCRIÇÃO ---
                 Text {
-                    text: currentItem ? currentItem.descriptionItem : ""
+                    text: currentStep ? currentStep.description : ""
                     width: parent.width - 40
                     anchors.horizontalCenter: parent.horizontalCenter
                     font.pixelSize: 14
@@ -932,9 +996,126 @@ Item {
                         // ALTERAÇÃO NATIVA: Para o áudio do Java ao terminar o tour
                         AudioBridge.stopAudio()
                         root.isAudioPlaying = false
+                        var tourId = tourInfo ? (tourInfo.documentId || tourInfo.id) : null
+                        if (tourId) {
+                            Api.clearTourProgress(tourId)
+                        }
                         back()
                         recTours.visible = true
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            id: recChatButtonEffect
+            width: chatButtonIA.width
+            height: chatButtonIA.height
+            border.color: "#D4AF37"
+            color: "transparent"
+            z: 9999
+            radius: 50
+            border.width: 2
+            opacity: 0.6
+            anchors.centerIn: chatButtonIA
+            visible: chatButtonIA.visible ? true : false
+
+            Behavior on width {NumberAnimation { duration: 500 }}
+            Behavior on height {NumberAnimation { duration: 500 }}
+        }
+
+        Timer {
+            id: timerEffectChat
+            running: true
+            interval: 600
+            repeat: true
+            onTriggered: {
+                if(valorInicialAnimation < valorFinalAnimation) {
+                    recChatButtonEffect.border.color = "#D4AF37"
+                    recChatButtonEffect.width = recChatButtonEffect.width + 10
+                    recChatButtonEffect.height = recChatButtonEffect.height + 10
+                    valorInicialAnimation = valorInicialAnimation + 10
+                    recChatButtonEffect.opacity = recChatButtonEffect.opacity - 0.2
+                }  else {
+                    recChatButtonEffect.width = chatButtonIA.width
+                    recChatButtonEffect.height = chatButtonIA.height
+                    valorInicialAnimation = chatButtonIA.width
+                    recChatButtonEffect.border.color = "transparent"
+                    recChatButtonEffect.opacity = 0.6
+                    timerEffectChat.running = false
+                    timerResetEffect.running = true
+                }
+            }
+        }
+
+        Timer {
+            id: timerResetEffect
+            running: false
+            interval: 1000
+            onTriggered: {
+                timerEffectChat.running = true
+                timerResetEffect.running = false
+            }
+        }
+
+        Rectangle {
+            id: recBackground
+            anchors.fill: parent
+            color: "black"
+            opacity: 0.15
+            visible: false
+
+            onVisibleChanged: {
+                if (visible) {
+                        qrButtonTourPage.visible = false                        
+                } else {
+                        qrButtonTourPage.visible = true
+                }
+
+                if (valorExplorar === 0) {
+                    valorExplorar = 0
+                    valorLista = 0
+                } else {
+                    valorExplorar = 1
+                    valorLista = 1
+
+                }
+            }
+
+            // Faixa acima do painel: tocar fora do chat fecha-o
+            Item {
+                width: parent.width
+                height: 56
+                anchors.top: parent.top
+
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        chatIAPageVisible = 0
+                        recChat.anchors.bottomMargin = -recChat.height
+                        recBackground.visible = false
+
+                    }
+                }
+            }
+        }
+
+        GlobaLButtonChatIA {
+            id: chatButtonIA
+            x: valorLista === 0 ? parent.width - chatButtonIA.width - 20 : 20
+            anchors.bottom: valorLista === 0 ? miniPlayer.top : parent.bottom
+            anchors.bottomMargin: 20
+            visible: chatIAPageVisible === 0
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: {
+                    chatIAPageVisible = 1
+                    recChat.anchors.bottomMargin = 0
+                    recBackground.visible = true
+                    //miniPlayer.visible = false
+                    //qrButtonTourPage.visible = false
                 }
             }
         }
@@ -943,7 +1124,7 @@ Item {
         Rectangle {
             id: miniPlayer
             width: parent.width - 20
-            height: 75
+            height: 80
             radius: 10
             visible: valorExplorar === 0
             anchors.bottom: parent.bottom
@@ -967,7 +1148,7 @@ Item {
                 height: 1
                 color: "#2a2a2a"
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 5
+                anchors.bottomMargin: 10
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
@@ -1022,14 +1203,14 @@ Item {
                             })
                         }
 
-                        function updateAudioPosition() {
-                            let visualX = ballProgressAudioItem.x + (ballProgressAudioItem.width / 2)
-                            let percentage = Math.max(0, Math.min(visualX / progressBarBackgroundItem.width, 1))
+                        function updateMiniAudioPosition() {
+                            let visualX = miniProgressBall.x + (miniProgressBall.width / 2)
+                            let percentage = Math.max(0, Math.min(visualX / miniProgressBg.width, 1))
                             let newPos = percentage * root.fakeDuration
                             root.fakePosition = newPos
 
-                            // NOTIFICA O C++ (Adicione esta linha se tiver o método implementado no .h)
-                            AudioBridge.seek(newPos)
+                            // NOTIFICA O C++
+                            AudioBridge.seekTo(Math.round(newPos))
                         }
                     }
                 }
@@ -1041,7 +1222,7 @@ Item {
                         let percentage = mouse.x / width
                         let newPos = percentage * root.fakeDuration
                         root.fakePosition = newPos
-                        AudioBridge.seek(newPos) // <--- Envia para o C++
+                        AudioBridge.seekTo(Math.round(newPos)) // <--- Envia para o C++
                     }
                 }
             }
@@ -1062,7 +1243,7 @@ Item {
 
                     Image {
                         anchors.fill: parent
-                        source: currentItem ? currentItem.coverUrlItem : ""
+                        source: currentStep ? currentStep.imageUrl : ""
                         fillMode: Image.PreserveAspectCrop
                     }
 
@@ -1106,7 +1287,7 @@ Item {
                     clip: true
 
                     Text {
-                        text: currentItem ? currentItem.nameItem : ""
+                        text: currentStep ? currentStep.title : ""
                         font.pixelSize: 12
                         font.family: playfairSemiBold.name
                         color: "#ffffff"
@@ -1183,8 +1364,8 @@ Item {
                             } else {
                                 if (root.isAudioPaused) {
                                     AudioBridge.resumeAudio()
-                                } else if (currentItem && currentItem.audioItem) {
-                                    AudioBridge.startAudio(currentItem.audioItem)
+                                } else if (currentStep && currentStep.audioUrl) {
+                                    AudioBridge.startAudio(currentStep.audioUrl)
                                 }
                                 root.isAudioPlaying = true
                                 root.isAudioPaused = false
@@ -1220,6 +1401,23 @@ Item {
             }
         }
 
+        ChatIAPanel {
+            id: recChat
+            width: parent.width
+            height: parent.height - 56
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: -parent.height
+            anchors.horizontalCenter: parent.horizontalCenter
+            activeLanguage: linguaSelecionadaTourPage
+            sessionId: root.sessionId
+
+            onCloseRequested: {
+                chatIAPageVisible = 0
+                recChat.anchors.bottomMargin = -recChat.height
+                recBackground.visible = false
+            }
+        }
+
         GlobalQrButton {
             id: qrButtonTourPage
             x: (root.width - closePage.width) - qrButtonTourPage.width - 40
@@ -1240,6 +1438,94 @@ Item {
                     rowCode.visible = true
                     colCode.visible = true
                     gridNumbersCode.visible = true
+                }
+            }
+        }
+    }
+
+    // ─── DIÁLOGO: RETOMAR VISITA (US4) ──────────────────────────
+    Rectangle {
+        id: resumeDialogOverlay
+        anchors.fill: parent
+        visible: showResumeDialog
+        z: 1000
+        color: "#CC000000"
+
+        MouseArea {
+            anchors.fill: parent // bloqueia toques no conteúdo por trás
+        }
+
+        Rectangle {
+            width: parent.width - 60
+            radius: 16
+            color: "white"
+            anchors.centerIn: parent
+            height: dialogColumn.implicitHeight + 40
+
+            Column {
+                id: dialogColumn
+                width: parent.width - 40
+                anchors.centerIn: parent
+                spacing: 20
+
+                Text {
+                    text: appDataTourPage.dictionary["tourPageResumeTitle"] || "Continuar visita?"
+                    font.pixelSize: 18
+                    font.bold: true
+                    color: "#111827"
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                }
+
+                Text {
+                    text: (pendingResumeIndex >= 0 && steps[pendingResumeIndex])
+                          ? (appDataTourPage.dictionary["tourPageResumeSubtitle"] || "Já tinhas chegado a:") + " " + steps[pendingResumeIndex].title
+                          : ""
+                    font.pixelSize: 13
+                    color: "#4B5563"
+                    wrapMode: Text.WordWrap
+                    width: parent.width
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 46
+                    radius: 10
+                    color: "black"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: appDataTourPage.dictionary["tourPageResumeContinue"] || "Continuar de onde fiquei"
+                        color: "white"
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: resumeSavedProgress()
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 46
+                    radius: 10
+                    color: "white"
+                    border.width: 1
+                    border.color: "#9CA3AF"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: appDataTourPage.dictionary["tourPageResumeRestart"] || "Começar do início"
+                        color: "#111827"
+                        font.pixelSize: 14
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: restartTourFromBeginning()
+                    }
                 }
             }
         }
@@ -1451,63 +1737,12 @@ Item {
                                             QZXing.DecoderFormat_None
 
                                             var cleanTag = tag.trim()
-                                            var found = false
-                                            var foundItemGlobal = false
+                                            var item = findItemByDocumentId(cleanTag)
 
-                                            for (var i = 0; i < tourInfoItem.length; i++) {
-                                                if (tourInfoItem[i].documentId === cleanTag) {
-                                                    found = true
-                                                    contadorParagens = i + 1
-                                                    valorLista = 1
-                                                    valorExplorar = 1
-
-                                                    Qt.callLater(function() {
-                                                        playCurrentAudio()
-                                                    })
-
-                                                    cameraTour.active = false
-                                                    scannerPageTour.visible = false
-                                                    txtDetectQrCodeTour.visible = false
-                                                    rowCode.visible = false
-                                                    colCode.visible = false
-                                                    gridNumbersCode.visible = false
-                                                    successEffectTour.play()
-                                                    break
-                                                }
-                                            }
-
-                                            if (!found) {
-                                                for (let j = 0; j < appDataTourPage.items.length; j++) {
-                                                    if (appDataTourPage.items[j].documentId === cleanTag) {
-                                                        var globalItem = appDataTourPage.items[j]
-                                                        root.foundGlobalItem = globalItem
-
-                                                        AudioBridge.stopAudio()
-                                                        AudioBridge.setPlaylist([globalItem.audioItem], 0) // Define playlist isolada de 1 item
-                                                        AudioBridge.startAudio(globalItem.audioItem)
-                                                        isAudioPlaying = true
-                                                        root.isAudioPlaying = true
-                                                        foundItemGlobal = true
-                                                        getItem.visible = true
-                                                        cameraTour.active = false
-                                                        scannerPageTour.visible = false
-                                                        txtDetectQrCodeTour.visible = false
-                                                        rowCode.visible = false
-                                                        colCode.visible = false
-                                                        gridNumbersCode.visible = false
-                                                        successEffectTour.play()
-                                                        break
-                                                    }
-                                                }
-                                            }
-
-                                            if (!found && !foundItemGlobal) {
-                                                cameraTour.active = false
-                                                scannerPageTour.visible = false
-                                                txtDetectQrCodeTour.visible = false
-                                                rowCode.visible = false
-                                                colCode.visible = false
-                                                gridNumbersCode.visible = false
+                                            if (item) {
+                                                showIsolatedItem(item)
+                                            } else {
+                                                hideScannerUiTour()
                                                 errorEffectTour.playError()
                                             }
                                         }
@@ -1840,13 +2075,55 @@ Item {
         id: getItem
         anchors.fill: parent
         visible: false
-        color: "#111111"
+        color: "white"
 
         Flickable {
             anchors.fill: parent
             clip: true
             contentWidth: width
             contentHeight: contentColumnItem.implicitHeight + 40
+
+            Rectangle {
+                width: 42
+                height: 42
+                radius: 21
+                color: "#dbdada"
+                anchors.left: parent.left
+                anchors.leftMargin: 20
+                anchors.top: parent.top
+                anchors.topMargin: 20
+                z: 20
+
+                Canvas {
+                    width: 16
+                    height: 16
+                    anchors.centerIn: parent
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.reset()
+                        ctx.strokeStyle = "#374151"
+                        ctx.lineWidth = 2
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+
+                        ctx.beginPath()
+
+                        ctx.moveTo(7.5, 13); ctx.lineTo(2.5, 8); ctx.lineTo(7.5, 3)
+                        ctx.moveTo(13.5, 8); ctx.lineTo(2.5, 8)
+                        ctx.stroke()
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        getItem.visible = false
+                        root.isAudioPaused = false
+                        playCurrentAudio()
+                    }
+                }
+            }
 
             Column {
                 id: contentColumnItem
@@ -1866,9 +2143,10 @@ Item {
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: "transparent" }
-                            GradientStop { position: 0.7; color: "#2e2e2e" }
-                            GradientStop { position: 1.0; color: "#111111" }
+                            GradientStop { position: 0.0; color: "transparent"}
+                            GradientStop { position: 0.5; color: "transparent"}
+                            GradientStop { position: 0.8; color: "#CCFFFFFF" }
+                            GradientStop { position: 1.0; color: "white" }
                         }
                     }
                 }
@@ -1884,7 +2162,7 @@ Item {
                         wrapMode: Text.WordWrap
                         font.pixelSize: 28
                         font.family: playfairSemiBold.name
-                        color: "white"
+                        color: "Black"
                     }
 
                     // PLAYER AUDIO GLOBAL NATIVO
@@ -1893,8 +2171,8 @@ Item {
                         height: 60
                         radius: 10
                         border.width: 0.5
-                        border.color: "#474444"
-                        color: "#2a2a2a"
+                        border.color: "#9CA3AF"
+                        color: "#fafaf9"
 
                         Row {
                             width: parent.width
@@ -1934,11 +2212,18 @@ Item {
                                     anchors.fill: parent
                                     onClicked: {
                                         if (root.isAudioPlaying) {
-                                            AudioBridge.stopAudio()
+                                            // Pausa real (sem resetar), tal como no player da tour
+                                            AudioBridge.pauseAudio()
                                             root.isAudioPlaying = false
+                                            root.isAudioPaused = true
                                         } else {
-                                            AudioBridge.startAudio(foundGlobalItem.audioItem)
+                                            if (root.isAudioPaused) {
+                                                AudioBridge.resumeAudio() // Retorna exatamente de onde parou
+                                            } else {
+                                                AudioBridge.startAudio(foundGlobalItem.audioItem)
+                                            }
                                             root.isAudioPlaying = true
+                                            root.isAudioPaused = false
                                         }
                                     }
                                 }
@@ -1967,9 +2252,9 @@ Item {
 
                                 Rectangle {
                                     id: progressBarBackgroundGlobal
-                                    width: parent.width / 2
+                                    width: parent.width - playPauseButtonGlobal.width - 60
                                     height: 3
-                                    color: "white"
+                                    color: "#9CA3AF"
 
                                     Rectangle {
                                         id: progressBarFillGlobal
@@ -2002,12 +2287,22 @@ Item {
                                             drag.maximumX:progressBarBackgroundGlobal.width - (ballProgressAudioGlobal.width / 2)
 
                                             onPositionChanged: { if (drag.active) updateAudioPosition() }
-                                            onReleased: updateAudioPosition()
+
+                                            onReleased: {
+                                                updateAudioPosition()
+                                                ballProgressAudioGlobal.x = Qt.binding(function() {
+                                                    return progressBarFillGlobal.width - (ballProgressAudioGlobal.width / 2)
+                                                })
+                                            }
 
                                             function updateAudioPosition() {
                                                 let visualX = ballProgressAudioGlobal.x + (ballProgressAudioGlobal.width / 2)
                                                 let percentage = Math.max(0, Math.min(visualX / progressBarBackgroundGlobal.width, 1))
-                                                root.fakePosition = percentage * root.fakeDuration
+                                                let newPos = percentage * root.fakeDuration
+                                                root.fakePosition = newPos
+
+                                                // NOTIFICA O C++
+                                                AudioBridge.seekTo(Math.round(newPos))
                                             }
                                         }
                                     }
@@ -2017,16 +2312,18 @@ Item {
                                         z: -1
                                         onClicked: (mouse) => {
                                                        let percentage = mouse.x / width
-                                                       root.fakePosition = percentage * root.fakeDuration
+                                                       let newPos = percentage * root.fakeDuration
+                                                       root.fakePosition = newPos
+                                                       AudioBridge.seekTo(Math.round(newPos)) // <--- Envia para o C++
                                                    }
                                     }
                                 }
 
-                                RowLayout {
+                                Row {
                                     width: ballProgressAudioGlobal.width
-                                    Text { text: formatTime(root.fakePosition); font.pixelSize: 10; color: "#9CA3AF" }
-                                    Item { Layout.fillWidth: true }
-                                    Text { text: formatTime(root.fakeDuration); font.pixelSize: 10; color: "#9CA3AF" }
+                                    spacing: parent.width - playPauseButtonGlobal.width - 110
+                                    Text { text: formatTime(root.fakePosition); font.pixelSize: 10; color: "#9CA3AF" }  //"#9CA3AF"
+                                    Text { text: formatTime(root.fakeDuration); font.pixelSize: 10; color: "#9CA3AF" }  //"#9CA3AF"
                                 }
                             }
                         }
@@ -2040,44 +2337,7 @@ Item {
                         lineHeightMode: Text.ProportionalHeight
                         font.pixelSize: 14
                         font.family: interRegular.name
-                        color: "#9CA3AF"
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            width: 42
-            height: 42
-            radius: 21
-            color: "#1A1A1A"
-            border.width: 1
-            border.color: "#2A2A2A"
-            anchors.right: parent.right
-            anchors.rightMargin: 20
-            anchors.top: parent.top
-            anchors.topMargin: 20
-            z: 20
-
-            Text {
-                text: "x"
-                anchors.centerIn: parent
-                color: "#9CA3AF"
-                font.pixelSize: 16
-                font.family: interMedium.name
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                onClicked: {
-                    getItem.visible = false
-                    // ALTERAÇÃO NATIVA: Para o áudio global e volta para o áudio do tour nativo
-                    AudioBridge.stopAudio()
-                    if (saveAudio) {
-                        AudioBridge.startAudio(saveAudio)
-                        root.isAudioPlaying = true
-                    } else {
-                        root.isAudioPlaying = false
+                        color: "black"
                     }
                 }
             }

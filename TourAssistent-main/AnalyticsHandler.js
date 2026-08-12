@@ -1,8 +1,12 @@
 // AnalyticsHandler.js
 .import QtQuick.LocalStorage 2.0 as LS
+// Constitution Principle I: ACTIVE_ENTITY_DOCUMENT_ID não é redeclarado aqui.
+// Reutiliza o do ApiHandler.js (specs/004-analytics-multi-entity, research.md §2),
+// seguindo o mesmo padrão já usado por AssistantHandler.js para o baseUrl.
+.import "ApiHandler.js" as Api
 
-var baseUrl = "http://10.211.93.27:1337"    // ANDROID ESTAGIO
-//var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
+//var baseUrl = "http://10.211.93.27:1337"    // ANDROID ESTAGIO
+var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
 /**
  * Abre a BD local e garante que as tabelas de cache e configurações existem
  */
@@ -72,6 +76,7 @@ function sendEvent(eventType, language, itemId, tourId, sessionId, success) {
             "itemId": itemId ? parseInt(itemId) : null,
             "tourId": tourId ? parseInt(tourId) : null,
             "success": success !== undefined ? success : true, // Preenche o teu campo Boolean
+            "entidadeDocumentId": Api.ACTIVE_ENTITY_DOCUMENT_ID,
             "metadata": {
                 "deviceId": getOrCreateDeviceId(),
                 "source": "qml_application",

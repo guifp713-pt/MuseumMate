@@ -7,6 +7,7 @@
  */
 
 import { KNOWLEDGE_FALLBACK_ENABLED } from '../../../config/assistant';
+import { ACTIVE_ENTITY_DOCUMENT_ID } from '../../../config/museum';
 
 const SUPPORTED_LANGUAGES = ['pt', 'en', 'es', 'fr'];
 const MAX_MESSAGE_LENGTH = 2000;
@@ -137,6 +138,7 @@ async function writeAnalytics(
         itemId: null,
         tourId: null,
         success,
+        entidadeDocumentId: ACTIVE_ENTITY_DOCUMENT_ID,
         metadata: { source: 'assistant' },
       },
     });

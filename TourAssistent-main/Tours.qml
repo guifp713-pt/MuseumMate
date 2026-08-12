@@ -23,6 +23,30 @@ Item {
     property var appDataTour: ({})
     property bool showingTourPage: false
 
+    // Primeira tour marcada isMainTour (a "visita completa ao museu"); se
+    // houver mais do que uma marcada, só a primeira encontrada conta
+    // (spec.md FR-001). Mostrada à parte, numa secção "Afixada" fixa no topo.
+    property var mainTour: {
+        var list = appDataTour.tours || []
+        for (var i = 0; i < list.length; i++) {
+            if (list[i] && list[i].isMainTour === true) {
+                return list[i]
+            }
+        }
+        return null
+    }
+
+    // Restantes tours (todas, se nenhuma estiver marcada isMainTour).
+    property var otherTours: {
+        var list = appDataTour.tours || []
+        if (!mainTour) return list
+        var result = []
+        for (var i = 0; i < list.length; i++) {
+            if (list[i] !== mainTour) result.push(list[i])
+        }
+        return result
+    }
+
     function handleBack() {
         // Se a TourPage estiver ativa (nextPageTours === 1), volta para a lista de tours
         if (nextPageTours === 1) {
@@ -147,89 +171,180 @@ Item {
                 anchors.topMargin: 20
                 spacing: 15
                 clip: true
-                model: appDataTour.tours
+                model: otherTours
 
+                // Secção "Afixada" com a tour isMainTour, separada das
+                // restantes por uma linha — o cartão usa exatamente o mesmo
+                // conteúdo/layout do cartão normal, só a borda muda de cor.
+                header: Component {
+                    Column {
+                        width: listviewTour.width
+                        visible: !!mainTour
+                        height: mainTour ? implicitHeight : 0
+                        spacing: 15
+                        bottomPadding: mainTour ? 15 : 0
+
+                        Text {
+                            text: appDataTour.dictionary["toursMainTourSectionLabel"] || "Afixada"
+                            font.pixelSize: 11
+                            font.bold: true
+                            font.letterSpacing: 1.5
+                            font.capitalization: Font.AllUppercase
+                            color: "#D4AF37"
+                        }
+
+                        Rectangle {
+                            id: mainTourCard
+                            width: parent.width
+                            height: mainTourCardContent.implicitHeight + 20
+                            radius: 10
+                            border.width: 2
+                            border.color: "#D4AF37"
+                            color: "white"
+
+                            Row {
+                                id: mainTourCardContent
+                                anchors.fill: parent
+                                anchors.margins: 10
+                                spacing: 10
+
+                                Image {
+                                    source: mainTour ? mainTour.imageTour : ""
+                                    width: 80
+                                    height: 80
+                                    fillMode: Image.PreserveAspectCrop
+                                }
+
+                                Column {
+                                    spacing: 4
+                                    width: parent.width - 100
+
+                                    Text {
+                                        text: mainTour ? mainTour.nameTour : ""
+                                        font.pixelSize: 16
+                                        font.bold: true
+                                        color: "#111827"
+                                        elide: Text.ElideRight
+                                        width: parent.width
+                                    }
+
+                                    Row {
+                                        spacing: 6
+                                        Text {
+                                            text: mainTour ? mainTour.timeTour : ""
+                                            font.pixelSize: 11
+                                            color: "#D4AF37"
+                                        }
+                                        Text {
+                                            visible: !!(mainTour && mainTour.timeTour)
+                                            text: "."
+                                            font.pixelSize: 11
+                                            color: "#4B5563"
+                                        }
+                                        Text {
+                                            text: mainTour ? (mainTour.totalStops + " " + (mainTour.totalStops > 1 ? appDataTour.dictionary["tourStops"] : appDataTour.dictionary["tourPageStop"])) : ""
+                                            font.pixelSize: 11
+                                            color: "#4B5563"
+                                        }
+                                    }
+
+                                    Text {
+                                        text: mainTour ? mainTour.descriptionTour : ""
+                                        font.pixelSize: 12
+                                        color: "#6B7280"
+                                        maximumLineCount: 2
+                                        elide: Text.ElideRight
+                                        wrapMode: Text.WordWrap
+                                        width: parent.width
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    selectedTourData = mainTour
+                                    nextPageTours = 1
+                                    recTours.visible = false
+                                    isTourPageVisible = true
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: 1
+                            color: "#E5E7EB"
+                        }
+                    }
+                }
+
+                // Cartão no mesmo estilo visual da listagem de items em modo
+                // lista da TourPage (imagem à esquerda, texto à direita),
+                // conforme spec.md FR-002.
                 delegate: Rectangle {
                     id: delegateRoot
                     width: recRecurso.width
-                    height: layoutColuna.implicitHeight + 20
-                    radius: 20
+                    height: 100
+                    radius: 10
                     border.width: 1
                     border.color: mouseHandlerTour.containsMouse ? "#D4AF37" : "lightgrey"
                     color: "white"
 
-                    Column {
-                        id: layoutColuna
-                        anchors {
-                            top: parent.top
-                            left: parent.left
-                            right: parent.right
-                            margins: 15
-                        }
+                    Row {
+                        anchors.fill: parent
+                        anchors.margins: 10
                         spacing: 10
 
                         Image {
-                            id: imgComponent
                             source: modelData.imageTour
-                            width: parent.width
-                            height: 120
+                            width: 80
+                            height: 80
                             fillMode: Image.PreserveAspectCrop
-                            clip: true
                         }
 
-                        Text {
-                            text: modelData.nameTour
-                            font.pixelSize: 18
-                            font.bold: true
-                            color: "#111827"
-                            wrapMode: Text.WordWrap
-                            width: parent.width
-                        }
+                        Column {
+                            spacing: 4
+                            width: parent.width - 100
 
-                        Row {
-                            spacing: 30
+                            Text {
+                                text: modelData.nameTour
+                                font.pixelSize: 16
+                                font.bold: true
+                                color: "#111827"
+                                elide: Text.ElideRight
+                                width: parent.width
+                            }
 
                             Row {
-                                spacing:10
-
-                                Image {
-                                    source: "qrc:/images/images/clockGold.png"
-                                    width: 25
-                                    height: 25
-                                }
-
+                                spacing: 6
                                 Text {
                                     text: modelData.timeTour
-                                    font.pixelSize: 12
+                                    font.pixelSize: 11
                                     color: "#D4AF37"
-                                    anchors.top: parent.top
-                                    anchors.topMargin: 5
+                                }
+                                Text {
+                                    visible: !!modelData.timeTour
+                                    text: "."
+                                    font.pixelSize: 11
+                                    color: "#4B5563"
+                                }
+                                Text {
+                                    text: modelData.totalStops + " " + (modelData.totalStops > 1 ? appDataTour.dictionary["tourStops"] : appDataTour.dictionary["tourPageStop"])
+                                    font.pixelSize: 11
+                                    color: "#4B5563"
                                 }
                             }
 
                             Text {
-                                text: "."
-                                font.pixelSize: 18
-                                color: "#4B5563"
-                            }
-
-                            Text {
-                                text: modelData.totalStops + " " + (modelData.totalStops > 1 ? appDataTour.dictionary["tourStops"] : appDatatour.dictionary["tourPageStop"])
+                                text: modelData.descriptionTour
                                 font.pixelSize: 12
-                                color: "#4B5563"
-                                anchors.top: parent.top
-                                anchors.topMargin: 5
+                                color: "#6B7280"
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                                wrapMode: Text.WordWrap
+                                width: parent.width
                             }
-                        }
-
-                        Text {
-                            text: modelData.descriptionTour
-                            font.pixelSize: 13
-                            color: "#4B5563"
-                            wrapMode: Text.WordWrap
-                            maximumLineCount: 3
-                            elide: Text.ElideRight
-                            width: parent.width
                         }
                     }
 
@@ -269,6 +384,7 @@ Item {
         id: tourPage
         TourPage {
             linguaSelecionadaTourPage: linguaSelecionada
+            sessionId: root.sessionId
             onBack: {
                 nextPageTours = 0
                 recTours.visible = true

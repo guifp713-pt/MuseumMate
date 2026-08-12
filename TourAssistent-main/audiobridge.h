@@ -19,7 +19,10 @@ public:
     Q_INVOKABLE void stopAudio();
     Q_INVOKABLE void pauseAudio();
     Q_INVOKABLE void resumeAudio();
-    Q_INVOKABLE void setPlaylist(const QStringList &playlist, int currentIndex);
+    Q_INVOKABLE void setPlaylist(const QStringList &playlist, int currentIndex,
+                                  const QStringList &titles = QStringList(),
+                                  const QStringList &covers = QStringList(),
+                                  const QString &tourName = QString());
     Q_INVOKABLE void goToNext();
     Q_INVOKABLE void goToPrevious();
     Q_INVOKABLE void seekTo(int msec);

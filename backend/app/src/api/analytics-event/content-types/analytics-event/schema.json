@@ -53,6 +53,9 @@
     },
     "metadata": {
       "type": "json"
+    },
+    "entidadeDocumentId": {
+      "type": "string"
     }
   }
 }

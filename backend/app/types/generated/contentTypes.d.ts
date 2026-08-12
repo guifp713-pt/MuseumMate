@@ -455,6 +455,7 @@ export interface ApiAnalyticsEventAnalyticsEvent
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
+    entidadeDocumentId: Schema.Attribute.String;
     eventType: Schema.Attribute.Enumeration<
       [
         'visit_start',
@@ -836,6 +837,13 @@ export interface ApiTourTour extends Struct.CollectionTypeSchema {
     };
   };
   attributes: {
+    areas: Schema.Attribute.Relation<'oneToMany', 'api::area.area'>;
+    audioTour: Schema.Attribute.Media<'audios'> &
+      Schema.Attribute.SetPluginOptions<{
+        i18n: {
+          localized: true;
+        };
+      }>;
     createdAt: Schema.Attribute.DateTime;
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
@@ -852,6 +860,13 @@ export interface ApiTourTour extends Struct.CollectionTypeSchema {
           localized: true;
         };
       }>;
+    isMainTour: Schema.Attribute.Boolean &
+      Schema.Attribute.SetPluginOptions<{
+        i18n: {
+          localized: true;
+        };
+      }> &
+      Schema.Attribute.DefaultTo<false>;
     items: Schema.Attribute.Relation<'oneToMany', 'api::item.item'>;
     locale: Schema.Attribute.String;
     localizations: Schema.Attribute.Relation<'oneToMany', 'api::tour.tour'>;

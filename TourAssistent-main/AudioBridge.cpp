@@ -29,7 +29,9 @@ AudioBridge *AudioBridge::instance()
     return s_instance;
 }
 
-void AudioBridge::setPlaylist(const QStringList &playlist, int currentIndex)
+void AudioBridge::setPlaylist(const QStringList &playlist, int currentIndex,
+                               const QStringList &titles, const QStringList &covers,
+                               const QString &tourName)
 {
     m_playlist = playlist;
     m_currentIndex = currentIndex;
@@ -42,29 +44,48 @@ void AudioBridge::setPlaylist(const QStringList &playlist, int currentIndex)
         return;
     }
 
-    jobjectArray javaArray = env->NewObjectArray(playlist.size(), stringClass, nullptr);
-    if (!javaArray) {
+    auto toJavaStringArray = [&env, stringClass](const QStringList &list) -> jobjectArray {
+        jobjectArray array = env->NewObjectArray(list.size(), stringClass, nullptr);
+        if (!array) {
+            return nullptr;
+        }
+        for (int i = 0; i < list.size(); ++i) {
+            QJniObject javaString = QJniObject::fromString(list.at(i));
+            env->SetObjectArrayElement(array, i, javaString.object());
+        }
+        return array;
+    };
+
+    jobjectArray urlsArray = toJavaStringArray(playlist);
+    jobjectArray titlesArray = toJavaStringArray(titles);
+    jobjectArray coversArray = toJavaStringArray(covers);
+
+    if (!urlsArray || !titlesArray || !coversArray) {
+        if (urlsArray) env->DeleteLocalRef(urlsArray);
+        if (titlesArray) env->DeleteLocalRef(titlesArray);
+        if (coversArray) env->DeleteLocalRef(coversArray);
         env->DeleteLocalRef(stringClass);
         return;
     }
 
-    for (int i = 0; i < playlist.size(); ++i) {
-        QJniObject javaString = QJniObject::fromString(playlist.at(i));
-        env->SetObjectArrayElement(javaArray, i, javaString.object());
-    }
-
     QJniObject context = QNativeInterface::QAndroidApplication::context();
+    QJniObject jTourName = QJniObject::fromString(tourName);
 
     QJniObject::callStaticMethod<void>(
         "org/qtproject/example/TourAudioService",
         "setServicePlaylist",
-        "(Landroid/content/Context;[Ljava/lang/String;I)V",
+        "(Landroid/content/Context;[Ljava/lang/String;[Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;I)V",
         context.object(),
-        javaArray,
+        urlsArray,
+        titlesArray,
+        coversArray,
+        jTourName.object(),
         currentIndex
         );
 
-    env->DeleteLocalRef(javaArray);
+    env->DeleteLocalRef(urlsArray);
+    env->DeleteLocalRef(titlesArray);
+    env->DeleteLocalRef(coversArray);
     env->DeleteLocalRef(stringClass);
 #endif
 }

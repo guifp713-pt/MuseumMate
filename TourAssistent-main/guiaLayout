@@ -1,78 +1,20 @@
- Melhorias finais do Sistema
+Melhorias na app:
 
- [ ] -Tours: Tour fixada no topo: Uma Tour guiada pelo museu inteiro e depois abaixo as restantes. A listagem das tours deve ser de uma forma melhor, tem que ser mostrada na mesma forma usada para a listagem de items no modo lista na pagina TourPage.
-
- [ ] -TourPage: Na TourPage tem que ser uma Tour Guiada em que o utilizador nao precise de muito raciocinio. A tour deve conter uma descricao inicial quando abre onde apresente ela e com o seu proposito. Ou seja atualmente na TourPage inicialmente mostra o primeiro
-item da tour, eu quero alterar e adicionar um campo media audio,ás Tours, onde ele Mostra primeiro a Introdução á Tour mostrando da mesma forma que os items. o fluxo seria  Seleciona Tour - Abre pagina TourPage - Mostra e comeca a tocar o audio de introducao á tour
-no novo campo media com introducoes á tour - segue sequncialmente as informacoes da visita guida.
-Alteracoes adicionais e resolucao de problemas:
- [ ] - Quando tem muitos items dentro da Tour e está no modo lista sempre que clico no botao de avancar na aplicacao, o flickeble deve acompanhar o item atual na lista
- [ ] - A Tour deve aceitar Areas Tambem para dar um contexto extra para o utilizador ter contexto de onde está juntamente com trechos dizendo para se deslocar para algum lucal especifico.
- [ ] -De momento eu tenho a ballProgressAudioItem mas nao esta funcional, o objetivo dele é conseguir controlar o audio, esta deve ser possivel ser controlada no modo guia, lista e até no miniPlayer presente nas notificacoes em tempo real.
- [ ] - No modo Guia quando o Item tem muito texto os botoes de anterior e proximo ficam por cima do texto, deve ser corrigido.
- [ ] -Eu tenho alguns ficheiros java que establecem comunicacao com ficheiro .cpp que comunicam com a aplicacao e consigo ouvir e o objetivo é conseguir controlar o audio em segundo plano apenas nesse miniPlayer. De momento so estou conseguindo pausar e ouvir o audio em
-segundo plano. O objetivo é conseguir passar de audio (next) e retornar um audio (previus) para alem das funcionalidaes ja presentes.
- [ ]   -No miniPlayer das notificacoes em temporeal deve mostrar o mesmo conteudo que o miniPlayer presente na aplicacao na listagem por modo lista. De momento so mostra no miniPlayer das notificaceos em tempo real dizendo Museum Mate e os 3 botoes. Eu quero que em vez de dizer
- [ ]    -Quando fecho a pagina TourPage o progresso da Tour deve ficar armazenado e depois quando voltar a abrir a tour deve mostrar opcoes de selecao para conseguir retornar ao ultimo ponto da visita. Ou seja guardando o item onde estava.
-
- [ ]  -HomePage:Textos devem deixar de ser em cinzento para branco para contrastar com o preto
- [ ]  -Botao chat IA flutuante: Quero que o botao que abre o chat IA seja visivel na HomePage.qml, WelcomePage.qml e Tours.qml
-
-Melhorias no sistema:
- [ ]  -Na colection Entity deve ter mais um campo capaz de fornecer informacao para a IA responder a mais tipos de questoes especificas, tipo questoes comuns que sao feitas a guias de museus, a IA deve ser capaz de responder a tudo do visitante. (Mudanca Manual)
- [ ]  -Na colection Tour um campo media audio. (Mudanca Manual)
-
- [ ]  -Mudancas no Dashboard:
-
-Requesitos Funcionais
- [ ]  -Deve ter um modo escuro;
- [ ]  -Contagem de visitantes: De momento sempre que o visitante troca de idioma aumenta na contagem de visitantes. Por isso quero assumir que cada sessionId é uma visita por isso preciso que ele valide o sessionID sempre que for aumentar o valor das visitas
- [ ]  -Percentagem idiomas: de momento no dashboard as percentagens de idiomas estão funcionando mal e nao reflete bem como funciona o objetivo é validar em cada sessionID qual é o idioma mais usado. Ou seja em cada evento enviado por um sessionId deve verificar o idioma e depois
-ver qual o idioma mais usado daquele sessionID e a partir dai calcular a percentagem.
- [ ]  -Na tabela visitas por Período Comparativo deve ser mais completa pois ela so mostra comparativamente com o filtro: por dia, mostra comparativamente com o dia anterior, ultimos 7 dias comparativamente com os 7 dias anteriores aos ultimos 7 dias, e assim para o mes e para o ano.
-O objetivo é ser mais completo para o dia deve mostrar dos ultimos dias todos, nos ultimos 7 dias deve mostras varios ultmos 7 dias e assim para o mes e ano.
-
-Requesitos nao funcionais.
--Pouca latencia
 ====================================================================================================================================
+-Dentro da pagina da TourPage tem algumas melhorias que quero que facas.
+A primeira é quando entro numa Tour e faco uso das tecnologias NFC, QrCode ou inserir o Codigo o objetivo é mostrar informacao MAS TEM UM REQUESITO QUE NÃO ESTÁ A SER CUMPRIDO.
+O objetivo destas tecnologias dentro da TourPage é mostrar informacao de um Item especifico mas SEM PERDER O ANDAMENTO ATUAL DA TOUR. O problema do modo que está é que quando o NFC,qrCode ou code encontram um item eles verificam se faz parte da Tour
+caso faca parte da Tour ele redireciona para o posicionamento do item na Tour e caso nao faca parte abre uma pagina á parte onde mostra o item isolado e depois ao fechar essa pagina o processo nao se perde onde o visitante estava. Eu quero fazer essa alteração pois o objetivo é não perder fluxo ou o item atual que estava a ver.
+Objetivo é retirar essa verificação e mandar todos para mostrar todos os item lidos por qrCode , code e NFC para a pagina para nap perder o fluxo.
 
-Mudanca Estrutural
+-Outro problema nessa pagina, visto que agora todos os items vao para essa pagina o ballprogress dessa pagina tem que funcionar perfeitamente porem neste momento nao consigo controlar o audio dessa pagina.
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-===================================    Prompt Funcionamento Aplicação    ======================================================================================================
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+Analisa o motivo destes erros estarem presentes e tenta resolver
+====================================================================================================================================
+-Boa ficou resolvido mas agora ainda na pagina TourPage eu quero adicionar o botao de chat IA dentro dessa
 
-Aplicação Android 6.7.3 em QtQml com backend dentro de um container docker que cria ou restaura um strapi na versao v5.49.0 com os dados preservados . A aplicacao consiste num assistente de visita com o nome Museum Mate. A ideia principal da aplicacao
-é tornar a experiencia no museu mais interativa mas sem deixar o lado de vivenciar o museu , olhando, apreciando cada lugar e tal.
-Funcionalidades do Sistema:
--Permite utilização de dados offline mas priorizando uso da aplicacao usando internet.
-    Resumindo quando a aplicacao abre os dados são todos guardados em cache, depois assim podendo voltar a utilizar os dados em cache
-caso não consiga ir buscar os dados via internet.  (Linguas disponiveis: Portugues,Ingles,Espanhol e frances)
--Mapa visual da planta do museu funcionando como um mapa somente visual nao indicando onde o utilizador está.Quando entro nesta pagina mostra
-um retangulo mostrando e dando informacoes gerais do museu, recepcionando o visitante e dando instrucoes da aplicacao.Logo de seguida o utilizador
-tem diversas funcionalidades aqui, nomeadamente:
--Pin no mapa indicando areas ou pontos de interesse do Museu, quando clico em cada pin Mostra um retangulo mostrando informacoes daquele lugar juntamente com o recurso de audio
-acompanhando o que esta escrito. Dentro desse pin tem outros pin agora de items que estão dentro de areas especificas como a que foi selecionada. E aqui é exatamtente a mesma logica um retangulos mostrando infromacoes
-do item juntamente com o recurso de audio acompanhando cada palavra descrita visualmente.
--Permite mudar de Piso assim como de planta do museu tento assim varias areas, items para visitar.
--QrCode e code associados a cada item. Cada  item contem um QrCode ou code unico assim qunado clico num butao nos leva para uma aba onde mostra
-a camera do telefone e um local para adicionar um codigo. Quando o utilizador scaneia um qrCode ou escreve um codigo valido a aplicacao redireciona ele automaticamente
-, já clicando no pin da area, e clicando no pin do item scaneado ou com o code, mostrando visualmente e automaticamente todo o processo.
--Visitas Guiadas: Aqui é outra parte da aplicacao onde consigo visualizar items de forma sequencial e predefinida pelo administrador do museu. Cada tour tem diversos items.
-Funcionalidades desta pagina.
--Uso do qrCode e code aqui tambem mostrando visualmente infooormacoes do item apos scanear ou escrever code.
--Formas personalidadas de mostrar items. Podendo mostrar de forma mais visual todos os items numa forma de lista com menos informacoes ou mostrnado em forma de guia que é mais completa mostrnado tudo
--Utilizaccao de Foregraud Service para conseguir utilizar em segundo plano a aplicacao. OU SEJA: Quando utilizador entra na pagina o audio do primeiro item comeca a reproduzir sendo assim caso o utilizador
-saia da aplicacao mas nao fazendo swipe nela, ou seja nao encerrando ela completamente o audio continua a reproduzir e no menu das notificaceos em tempo real aparece um layout que permite fazer next, previus ou pause do audio do item.
--O sistema tambem contem integrado no qml uma forma de enviar dados pontuais que indicam acoes do utilizador que depois sao armazenadas no strpai no backend e depois num dashboard react
-que esta integrado com o proprio strapi que é restaurado e criado dentro de um container docker com os dados existentes consigo organizar os dados que sao enviados do qml para o strapi e organizados pelo dashboard para mostrar estatisticas ao admin
--No strapi quando crio um item gera um qrCode automatico apontado para o id do item criado
--Para alem disso coloquei uma funcionalidade de NFC, capaz de quando leio o NFC em qualquer pagina da aplicacao a app redireciona autmaticamente para o item lido no nfc
 
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-==============================================================================================================================================================================
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+====================================================================================================================================
 
 Desenhar ARQUITETURAS: https://excalidraw.com/
 Notas
@@ -80,8 +22,14 @@ Notas
 -Estudar conceitos de SOLID, Domain-Driven Design, Arquiecture Software, Arquiecture de design, Redes.
 
 ========================================================================================================================================
+5 Conclusão
 
-
+Em suma, este estágio foi muito enriquecedor para o meu desenvolvimento pessoal, tendo sido fundamental na aprendizagem e na consolidação da importância da arquitetura de software, do levantamento de requisitos, do pensamento lógico e do pensamento crítico na construção de qualquer projeto.
+Do ponto de vista da arquitetura, a principal aprendizagem que retiro deste estágio foi ter percebido, desde o primeiro dia do Museum Mate, que nenhuma linha de código deve ser escrita antes de a base do sistema estar bem pensada. Antes de se avançar para a implementação de qualquer componente, era hábito discutir e questionar cada decisão arquitetural — desde a separação entre a aplicação móvel e o CMS, até à forma como o áudio deveria comunicar entre as diferentes camadas do sistema. Esta disciplina, presente desde o início do projeto, foi determinante para que as arquiteturas definidas ao longo do estágio tivessem sempre sucesso, sem necessidade de retrabalho estrutural mais tarde. Fica claro, para mim, que quando a base de um sistema está mal pensada, todo o software construído sobre ela herda essa fragilidade — e que o inverso também é verdadeiro.
+Associada a esta aprendizagem está a importância do levantamento de requisitos e da capacidade de fazer as perguntas certas antes de programar. Ainda antes de adotar formalmente uma metodologia orientada por especificações (secção 3.3.9), já procurava perceber, com rigor, o que cada funcionalidade exigia do sistema antes de a implementar; o spec-kit veio sobretudo reforçar e formalizar esse hábito, obrigando a documentar essas perguntas e respostas de forma explícita. Levo deste estágio a convicção de que a qualidade de um levantamento de requisitos determina, em larga medida, a qualidade da solução final.
+============================================================================================================================================
+                Mudancas
+============================================================================================================================================
 Mudancas na visao treinador
 Adiciona o botao de utilizar o ultimo 11 que tem objetivo de  verificar o ultimo 11 usado no ultimo jogo e autocompleta as posicoes com o utilmo onze.Restricoes do sistema. O modo jogo so pode ser iniciado se a convocatoria e o onze ja estiverem concluidos. No modo jogo nao consigo aumentar o resultado do adversario, eu quero conseguir aumentar e diminuir os golos do adversario e como foi o golo, se foi Jogada normal,  livre, cantos, penalti, autogolo e se for autogolo escolher o jogador que fez autogolo.   Remove a opcao de escolher a posse de bola. No modo jogo tens a opcao de fazer reset, porem  caso o treinador clicar ai sem querer tem que haever uma forma de restaurar o que tava antes, por isso antes de fazer reset armazena as informacoes, tudo , golos, cantos, amarelos todas as estatisticas do modo jogo e  quando clicar em reset deve guardar e depois desaparecer tudo mas se caso queria voltar onde estava antes deve ser possivel. No modo jogo tambem deve dar para finalizar primeira parte e depois aparece botao de retornar ao jogo e depois aparece botao para finalizar jogo.
 Nos treinos deve ter uma opcao de personalizar os treinos automaticos, ou seja o treinador escolhe os dias que acontece os treinos na semana e depois de pre selecionar os dias que acontecem os treinos na semana e depois se ele quiser em vez de ter que criar sempre os treinos todos os dias que tem treino o sistema tem uma opcoa para enviar treinos da semana e cria logo os treinos pre selecionados para cada dia.
@@ -93,3 +41,8 @@ Mudancas Jogador
 -Quando jogador clica em confirmar presenca o sistema nao deve adotar que ele vai automaticamente, abaixo de Como vais para o jogo deve ter mais uma opcao dizendo "Nao vou".
 -Deve ser possivel confirmar presenca no treino.
 -Quando for escolher como vai para o jogo caso clique em Preciso de boleia ele deve poder conseguir ver quais as logisticas atuais e escolher com quem vai e so deixa marcar que vai de boleia com algumas das logisticas se não tiver cheio.
+
+
+
+
+

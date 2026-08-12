@@ -42,12 +42,7 @@ ApplicationWindow  {
     property string pendingNfcCode: ""
     property bool entityConfigError: false
     property bool offlineNoContentError: false
-    // Ecrã distinto de isLoading: só fica true quando não havia NENHUM conteúdo
-    // em cache para esta língua/entidade e é preciso descarregar tudo (JSON +
-    // media) do zero antes de a app poder ser usada.
     property bool downloadingContent: false
-    // Identificam o download de media em curso, para o Connections abaixo
-    // saber a que carregarDados() corresponde o mediaSyncFinished recebido.
     property string pendingSyncDocId: ""
     property string pendingSyncLang: ""
     property var pendingSyncCallback: null
@@ -58,7 +53,8 @@ ApplicationWindow  {
                                "items": [],
                                "dictionary": {},
                                "tours": {},
-                               "tourItem": {}
+                               "tourItem": {},
+                               "tourSteps": {}
                            })
 
     // --- LÓGICA DE DADOS ---
@@ -73,20 +69,14 @@ ApplicationWindow  {
             "items": AH.getItems(dados, localPath),
             "dictionary": AH.getDictionary(dados, localPath),
             "tours": AH.getTours(dados, localPath),
-            "tourItem": AH.getAllTourItems(dados, localPath)
+            "tourItem": AH.getAllTourItems(dados, localPath),
+            "tourSteps": AH.getAllTourSteps(dados, localPath)
         }
         if (passarPagina) {
             nextPage = 1
         }
     }
 
-    // Carregamento de ARRANQUE — silencioso e não bloqueante.
-    // Serve apenas para preencher os rótulos do próprio ecrã de seleção de
-    // língua (nome do museu e "escolha o idioma", que vêm do catálogo). Nunca
-    // mostra o ecrã de download nem qualquer ecrã de erro: a app tem de abrir
-    // sempre diretamente na escolha de língua, com ou sem rede, com ou sem
-    // cache. Descarregar conteúdo é uma decisão que só acontece depois de o
-    // visitante escolher a língua (ver carregarDados).
     function carregarDadosArranque(lingua) {
         AH.getCachedData(lingua, function(cachedDados) {
             if (cachedDados && cachedDados.length > 0) {
@@ -94,16 +84,9 @@ ApplicationWindow  {
                 return
             }
 
-            // Sem cache: tenta a rede só para os rótulos, e falha em silêncio
-            // (offline na primeira abertura → rótulos vazios, mas o ecrã de
-            // línguas aparece à mesma). Não grava cache nem descarrega media —
-            // isso pertence ao fluxo da escolha de língua.
             AH.fetchFromNetwork(lingua, function(dados, errorReason) {
                 if (errorReason || !dados || dados.length === 0)
                     return
-                // Se entretanto o visitante já escolheu uma língua ou avançou,
-                // esta resposta atrasada está desatualizada — ignorar, senão
-                // sobrescreveria o conteúdo da língua realmente escolhida.
                 if (nextPage !== 0 || downloadingContent || lingua !== linguaEscolhida)
                     return
                 aplicarDados(dados, lingua, false)
@@ -111,12 +94,6 @@ ApplicationWindow  {
         })
     }
 
-    // Carregamento por ESCOLHA DE LÍNGUA — este sim pode bloquear a app.
-    // Cache é sempre a prioridade: se já existir conteúdo local para esta
-    // língua/entidade, usa-o de imediato e nunca depende da rede. Só quando
-    // não há nenhuma cache é que se vai buscar tudo à rede — nesse caso mostra
-    // um ecrã de "a descarregar conteúdo" e só liberta a app quando o JSON E
-    // todos os ficheiros de media tiverem mesmo terminado de descarregar.
     function carregarDados(lingua, passarPagina) {
         isLoading = true
         entityConfigError = false
@@ -195,7 +172,19 @@ ApplicationWindow  {
 
             function onTagDetected(tagCode) {
                 var cleanTag = String(tagCode).trim();
-                console.log("NFC MAIN: Deep Link ativado! Guardando código pendente:", cleanTag);
+
+                // A HomePage e a TourPage têm cada uma a sua própria Connections
+                // e tratam a tag diretamente enquanto estiverem visíveis. Se
+                // interviéssemos aqui também, pisávamos o pendingNfcCode delas
+                // (ele fica preso por nunca ser consumido) e podíamos acabar a
+                // reprocessar uma tag antiga da próxima vez que essa página for
+                // recriada. Por isso só atuamos quando estamos fora de ambas.
+                if (isHomePageVisible || isTourPageVisible) {
+                    console.log("NFC MAIN: HomePage/TourPage já tratam a tag diretamente:", cleanTag);
+                    return;
+                }
+
+                console.log("NFC MAIN: Fora da HomePage/TourPage — a redirecionar. Código pendente:", cleanTag);
 
                 pendingNfcCode = cleanTag;
                 if (nextPage !== 1) {
@@ -203,12 +192,7 @@ ApplicationWindow  {
                 }
 
                 Qt.callLater(function() {
-                    if (isTourPageVisible != true) {
-                        gameLoader.item.nextPageWelcome = 1;
-                        console.log ("Sai da TourPage: ", isTourPageVisible)
-                    } else if (isTourPageVisible === true) {
-                        console.log ("Fica na TourPage: ", isTourPageVisible)
-                    }
+                    gameLoader.item.nextPageWelcome = 1;
                 });
             }
         }
@@ -256,6 +240,14 @@ ApplicationWindow  {
         }
     }
 
+    // Rectangle {
+    //     id: recBorda
+    //     anchors.fill: parent
+    //     border.width: 3
+    //     border.color: "black"
+    //     color: "transparent"
+    //     z: 9999
+    // }
 
 
     // --- INTERFACE ---

@@ -6,6 +6,11 @@ const controller = ({ strapi }) => ({
       .service("service")
       .getWelcomeMessage();
   },
+
+  // specs/004-analytics-multi-entity §7 — GET /analytics-dashboard/active-entity
+  activeEntity(ctx) {
+    ctx.body = strapi.plugin("analytics-dashboard").service("service").getActiveEntity();
+  },
 });
 
 export default controller;

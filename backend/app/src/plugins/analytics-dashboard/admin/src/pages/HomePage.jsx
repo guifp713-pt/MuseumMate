@@ -1,5 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useFetchClient } from '@strapi/strapi/admin';
 import KpiCard from '../components/KpiCard';
+
+// =========================================================================
+// 🌐 0. CHAMADAS À API DE CONTEÚDO PÚBLICA (/api/...)
+// =========================================================================
+// specs/004-analytics-multi-entity: NÃO usar useFetchClient aqui — esse
+// cliente injeta sempre o token JWT de sessão do admin (Authorization: Bearer),
+// e a API de conteúdo (auth: false nestas rotas) rejeita esse token com 401
+// em vez de o tratar como pedido anónimo (useFetchClient destina-se a rotas
+// /admin/... e a rotas admin de plugins, não à Content API). window.strapi.
+// backendURL é o mesmo global que o próprio Strapi usa internamente
+// (getFetchClient.mjs) para descobrir a origem do backend — sem hardcode de
+// host (Constitution Principle I), e sem enviar um token que não é aceite.
+async function fetchContentApi(path) {
+  const response = await fetch(`${window.strapi.backendURL}${path}`);
+  if (!response.ok) {
+    throw new Error(`Falha na comunicação com a API (HTTP ${response.status}): ${path}`);
+  }
+  return response.json();
+}
 
 // =========================================================================
 // 🧠 1. CONSTRUTOR DE PERÍODOS (Puro UTC, Sem Dependência de Timezone Local)
@@ -344,16 +364,64 @@ export function calculateStats(eventosNormalizados, periodoConfig, nomesDosItens
 }
 
 // =========================================================================
+// 🧠 3.5 MÉTRICAS DE UTILIZAÇÃO DO ASSISTENTE DE IA (specs/004, US3)
+// =========================================================================
+// Agregação pura sobre os mesmos eventos já normalizados e já filtrados por
+// museu + período (research.md §10) — as quatro categorias mapeiam 1:1 para
+// os eventType já gravados desde as features 001/003, sem nova classificação:
+// assistant_question (respondida), assistant_decline (fora de âmbito),
+// assistant_error (falha técnica), assistant_knowledge_fallback (conhecimento
+// geral da IA). Nunca fundidas num único total (FR-012).
+export function calculateAssistantStats(eventosNormalizados, periodoConfig) {
+  const { inicioAtual, fimAtual } = periodoConfig;
+
+  let answered = 0;
+  let declinedOffDomain = 0;
+  let technicalErrors = 0;
+  let knowledgeFallbackUsed = 0;
+
+  eventosNormalizados.forEach(e => {
+    if (!e || !e.timestamp || e.timestamp < inicioAtual || e.timestamp > fimAtual) return;
+
+    if (e.eventType === 'assistant_question') answered++;
+    else if (e.eventType === 'assistant_decline') declinedOffDomain++;
+    else if (e.eventType === 'assistant_error') technicalErrors++;
+    else if (e.eventType === 'assistant_knowledge_fallback') knowledgeFallbackUsed++;
+  });
+
+  const total = answered + declinedOffDomain + technicalErrors + knowledgeFallbackUsed;
+  const pct = (n) => (total > 0 ? `${((n / total) * 100).toFixed(1)}%` : '0%');
+
+  return {
+    total,
+    answered,
+    declinedOffDomain,
+    technicalErrors,
+    knowledgeFallbackUsed,
+    answeredPct: pct(answered),
+    declinedPct: pct(declinedOffDomain),
+    errorsPct: pct(technicalErrors),
+    fallbackPct: pct(knowledgeFallbackUsed),
+  };
+}
+
+// =========================================================================
 // 🧠 4. CUSTOM HOOK DE GESTÃO E CAPTURA DE DADOS (useAnalytics OTIMIZADO)
 // =========================================================================
-function useAnalytics(periodoAtivo, dataLimiteISO) {
+// specs/004-analytics-multi-entity: filtra por entidadeDocumentId no servidor
+// (FR-008/NFR-4.3) — nunca traz eventos de todos os museus para depois
+// descartar no cliente. Só arranca quando entidadeDocumentId é conhecido
+// (contracts/dashboard-queries.md §1).
+function useAnalytics(periodoAtivo, dataLimiteISO, entidadeDocumentId) {
   const [eventosPuros, setEventosPuros] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false); 
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [loadingProgress, setLoadingProgress] = useState({ paginaAtual: 1, totalPaginas: 1, eventosCarregados: 0 });
 
   useEffect(() => {
+    if (!entidadeDocumentId) return undefined;
+
     let isMounted = true;
     let timerId = null;
 
@@ -366,14 +434,11 @@ function useAnalytics(periodoAtivo, dataLimiteISO) {
         let acumulado = [];
         let paginaAtual = 1;
         let totalDePaginas = 1;
-        
+
         do {
-          const endpoint = `http://localhost:1337/api/analytics-events?publicationState=preview&pagination[page]=${paginaAtual}&pagination[pageSize]=100&sort=id:desc`;
-          
-          const response = await fetch(endpoint);
-          if (!response.ok) throw new Error('Falha na comunicação com o Strapi.');
-          
-          const result = await response.json();
+          const endpoint = `/api/analytics-events?publicationState=preview&pagination[page]=${paginaAtual}&pagination[pageSize]=100&sort=id:desc&filters[entidadeDocumentId][$eq]=${encodeURIComponent(entidadeDocumentId)}`;
+
+          const result = await fetchContentApi(endpoint);
 
           if (result.data && Array.isArray(result.data)) {
             acumulado = [...acumulado, ...result.data];
@@ -413,13 +478,13 @@ function useAnalytics(periodoAtivo, dataLimiteISO) {
 
     timerId = setInterval(() => {
       fetchAnalytics(true);
-    }, 10000); 
+    }, 10000);
 
     return () => {
       isMounted = false;
       clearInterval(timerId);
     };
-  }, [periodoAtivo, dataLimiteISO]);
+  }, [periodoAtivo, dataLimiteISO, entidadeDocumentId]);
 
   const eventosNormalizados = useMemo(() => {
     if (!eventosPuros || eventosPuros.length === 0) return [];
@@ -820,33 +885,116 @@ export function TopItemsChart({ dados }) {
 // 🎨 5. COMPONENTE PRINCIPAL (HomePage)
 // =========================================================================
 export function HomePage() {
+  const { get } = useFetchClient();
   const [periodoAtivo, setPeriodoAtivo] = useState('hoje');
   const [nomesDosItens, setNomesDosItens] = useState({});
-  
+
+  // specs/004-analytics-multi-entity (US2): museu selecionado no dashboard.
+  // Arranca a null propositadamente — só passa a ter um valor depois do efeito
+  // de montagem abaixo resolver a lista de museus e o museu ativo configurado
+  // no backend (FR-017), o que mantém `useAnalytics` bloqueado (loading) até
+  // sabermos por qual museu filtrar, em vez de disparar um pedido não filtrado.
+  const [museuAtivo, setMuseuAtivo] = useState(null);
+  const [museusDisponiveis, setMuseusDisponiveis] = useState([]);
+  const [erroMuseu, setErroMuseu] = useState(null);
+
   const periodoConfig = useMemo(() => buildPeriod(periodoAtivo), [periodoAtivo]);
 
-  const { eventosNormalizados, loading, isBackgroundRefreshing, error, loadingProgress } = useAnalytics(periodoAtivo, periodoConfig.dataISO);
+  const { eventosNormalizados, loading, isBackgroundRefreshing, error, loadingProgress } = useAnalytics(
+    periodoAtivo,
+    periodoConfig.dataISO,
+    museuAtivo?.documentId
+  );
+
+  // Carrega, uma única vez, a lista de museus e qual está atualmente
+  // configurado como ativo no backend (contracts/dashboard-queries.md §3-4),
+  // para pré-selecionar o seletor (FR-017) sem que o administrador tenha de
+  // escolher manualmente ao abrir o dashboard.
+  useEffect(() => {
+    let isMounted = true;
+
+    async function carregarMuseus() {
+      try {
+        // specs/004-analytics-multi-entity: /api/entidades é Content API
+        // (fetchContentApi, sem token de admin); /analytics-dashboard/active-entity
+        // é uma rota de admin do próprio plugin (useFetchClient, com token) — ver
+        // comentário da função fetchContentApi acima para o porquê da distinção.
+        const [entidadesJson, ativoRes] = await Promise.all([
+          fetchContentApi('/api/entidades?locale=pt&fields[0]=nameEntity&fields[1]=documentId'),
+          get('/analytics-dashboard/active-entity'),
+        ]);
+
+        if (!isMounted) return;
+
+        const museus = (entidadesJson.data || []).map(e => ({
+          documentId: e.documentId,
+          nameEntity: e.nameEntity || e.attributes?.nameEntity || e.documentId,
+        }));
+
+        setMuseusDisponiveis(museus);
+
+        const documentIdAtivo = ativoRes.data?.documentId;
+        const museuAtivoEncontrado = museus.find(m => m.documentId === documentIdAtivo);
+        setMuseuAtivo(museuAtivoEncontrado || museus[0] || null);
+
+        if (museus.length === 0) {
+          setErroMuseu('Nenhum museu (entidade) encontrado no Strapi.');
+        }
+      } catch (err) {
+        if (isMounted) setErroMuseu(err.message);
+      }
+    }
+
+    carregarMuseus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!museuAtivo?.documentId) return undefined;
+    let isMounted = true;
+
+    // specs/004-analytics-multi-entity (FR-009): filtra pela relação de 3 saltos
+    // item → area → map → entidade (item não tem relação direta com entidade),
+    // e pagina até esgotar em vez de assumir que uma página de 100 chega —
+    // essa suposição era o bug real por trás de nomes de item incompletos.
     async function carregarNomesDoStrapi() {
       try {
-        const response = await fetch('http://localhost:1337/api/items?pagination[pageSize]=100');
-        if (!response.ok) return;
-        const result = await response.json();
-        if (result.data && Array.isArray(result.data)) {
-          const dicionario = {};
-          result.data.forEach(item => {
-            const nome = item.nameItem || item.attributes?.nameItem;
-            if (nome) dicionario[item.id] = nome;
-          });
-          setNomesDosItens(dicionario);
-        }
+        let dicionario = {};
+        let paginaAtual = 1;
+        let totalDePaginas = 1;
+
+        do {
+          const endpoint =
+            `/api/items?filters[area][map][entidade][documentId][$eq]=${encodeURIComponent(museuAtivo.documentId)}` +
+            `&pagination[page]=${paginaAtual}&pagination[pageSize]=100&fields[0]=nameItem`;
+
+          const result = await fetchContentApi(endpoint);
+
+          if (result.data && Array.isArray(result.data)) {
+            result.data.forEach(item => {
+              const nome = item.nameItem || item.attributes?.nameItem;
+              if (nome) dicionario[item.id] = nome;
+            });
+          }
+
+          totalDePaginas = result.meta?.pagination?.pageCount || 1;
+          paginaAtual++;
+        } while (paginaAtual <= totalDePaginas);
+
+        if (isMounted) setNomesDosItens(dicionario);
       } catch (err) {
         console.error("Erro ao sincronizar mapeamento de itens:", err);
       }
     }
     carregarNomesDoStrapi();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [museuAtivo?.documentId]);
 
   const formatarVisualUTC = (dObj) => {
     return dObj.toISOString().split('T')[0];
@@ -865,7 +1013,17 @@ export function HomePage() {
     return buildTopItemsChartData(eventosNormalizados, periodoConfig, nomesDosItens);
   }, [eventosNormalizados, periodoConfig, nomesDosItens]);
 
-  if (loading) {
+  // specs/004-analytics-multi-entity (US3): métricas de utilização do assistente,
+  // derivadas dos mesmos eventos já filtrados por museu + período (FR-013).
+  const statsAssistente = useMemo(() => {
+    return calculateAssistantStats(eventosNormalizados, periodoConfig);
+  }, [eventosNormalizados, periodoConfig]);
+
+  if (erroMuseu) {
+    return <div style={{ padding: '32px', color: '#ef4444', fontFamily: 'sans-serif' }}>❌ Erro: {erroMuseu}</div>;
+  }
+
+  if (!museuAtivo || loading) {
     const percentagemProgresso = Math.min(
       Math.round((loadingProgress.paginaAtual / loadingProgress.totalPaginas) * 100),
       100
@@ -973,6 +1131,24 @@ export function HomePage() {
           <button style={btnStyle(periodoAtivo === '30d')} onClick={() => setPeriodoAtivo('30d')}>Últimos 30 dias</button>
           <button style={btnStyle(periodoAtivo === 'ano')} onClick={() => setPeriodoAtivo('ano')}>Ano</button>
         </div>
+
+        {/* specs/004-analytics-multi-entity (FR-006/FR-017): seletor de museu — cada
+            figura da página passa a estar restrita a este museu, nunca ao conjunto global. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '12px', color: '#6b7280', fontWeight: '600' }}>MUSEU</span>
+          <select
+            value={museuAtivo?.documentId || ''}
+            onChange={(e) => {
+              const selecionado = museusDisponiveis.find(m => m.documentId === e.target.value);
+              if (selecionado) setMuseuAtivo(selecionado);
+            }}
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e5e7eb', backgroundColor: '#fff', color: '#111827', fontSize: '14px', fontWeight: '600', cursor: 'pointer' }}
+          >
+            {museusDisponiveis.map(m => (
+              <option key={m.documentId} value={m.documentId}>{m.nameEntity}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* ZONA 1: KPIs */}
@@ -1073,6 +1249,49 @@ export function HomePage() {
           <TopItemsChart dados={dadosTopItems} />
         </div>
 
+      </div>
+
+      {/* ZONA 3: Utilização do Assistente de IA (specs/004-analytics-multi-entity, US3) */}
+      <div style={{ marginTop: '32px' }}>
+        <h3 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: '700', color: '#1e3a8a' }}>Utilização do Assistente de IA</h3>
+        <p style={{ margin: '0 0 16px 0', color: '#6b7280', fontSize: '12px' }}>
+          Distingue perguntas respondidas, recusas fora de âmbito e erros técnicos — para perceber se um pico é
+          "visitantes a perguntar fora de âmbito" ou "o assistente está a falhar".
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '24px' }}>
+          <KpiCard
+            title="PERGUNTAS RESPONDIDAS"
+            value={statsAssistente.answered.toString()}
+            percentage={`${statsAssistente.answeredPct} das interações`}
+            isPositive={true}
+            iconText=""
+            iconBg="#f0fdf4"
+          />
+          <KpiCard
+            title="FORA DE ÂMBITO"
+            value={statsAssistente.declinedOffDomain.toString()}
+            percentage={`${statsAssistente.declinedPct} das interações`}
+            isPositive={true}
+            iconText=""
+            iconBg="#eff6ff"
+          />
+          <KpiCard
+            title="ERROS TÉCNICOS"
+            value={statsAssistente.technicalErrors.toString()}
+            percentage={statsAssistente.technicalErrors > 0 ? 'requer atenção' : 'sem erros no período'}
+            isPositive={statsAssistente.technicalErrors === 0}
+            iconText=""
+            iconBg="#fff1f2"
+          />
+          <KpiCard
+            title="CONHECIMENTO GERAL DA IA"
+            value={statsAssistente.knowledgeFallbackUsed.toString()}
+            percentage="fora do catálogo — sinal de lacunas de conteúdo"
+            isPositive={true}
+            iconText=""
+            iconBg="#fef9c3"
+          />
+        </div>
       </div>
     </div>
   );

@@ -680,10 +680,10 @@ Rectangle {
     // como chaves de dictionary no Strapi para esta feature.
     function onlineText() {
         switch (activeLanguage) {
-        case "en": return "Online · replies in seconds"
-        case "es": return "En línea · responde en segundos"
-        case "fr": return "En ligne · répond en quelques secondes"
-        default:   return "Online · responde em segundos"
+        case "en": return "Online"
+        case "es": return "En línea"
+        case "fr": return "En ligne"
+        default:   return "Online"
         }
     }
 
