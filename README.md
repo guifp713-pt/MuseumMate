@@ -1,18 +1,18 @@
-# 🏛️ Museum Mate — Enterprise Museum Guide & AI Assistant
+# Museum Mate — Enterprise Museum Guide & AI Assistant
 
 > **Status do Projeto:** Case de Portfólio / Produto Proprietário  
 > **Arquitetura:** Monorepo (Mobile Cross-Platform + Headless CMS + AI Integration)
 
 ---
 
-## 🎯 Visão Geral do Produto
+## Visão Geral do Produto
 O **Museum Mate** é uma solução de guia turístico digital de alta performance desenvolvida para museus modernos. O sistema combina um aplicativo móvel nativo de baixa latência (para garantir fluidez em qualquer dispositivo Android) com um painel administrativo robusto baseado em CMS headless e um assistente inteligente integrado via IA.
 
 Este repositório demonstra a capacidade de projetar, arquitetar e entregar um **ecossistema completo de ponta a ponta**, lidando com desafios complexos de engenharia móvel, persistência local offline e processamento de linguagem natural no backend.
 
 ---
 
-## 🧩 Destaques de Arquitetura & Engenharia
+## Destaques de Arquitetura & Engenharia
 
 ### 1. Aplicativo Mobile de Alta Performance (`TourAssistent-main/`)
 * **Stack:** C++17 + Qt Quick (QML).
@@ -33,7 +33,8 @@ Este repositório demonstra a capacidade de projetar, arquitetar e entregar um *
 
 ---
 
-## 🛠️ Stack Tecnológica
+## 
+Stack Tecnológica
 
 | Camada | Tecnologias |
 | :--- | :--- |
