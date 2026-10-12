@@ -1067,9 +1067,11 @@ Item {
 
             onVisibleChanged: {
                 if (visible) {
-                        qrButtonTourPage.visible = false                        
+                        qrButtonTourPage.visible = false
+                        miniPlayer.visible = false
                 } else {
                         qrButtonTourPage.visible = true
+                        miniPlayer.visible = true
                 }
 
                 if (valorExplorar === 0) {

@@ -6,6 +6,11 @@
 #include <QGuiApplication>      //dentro do if e so rodam se o projeto for rodado en android
 #include <QJniEnvironment>
 #include <QJniObject>
+#else
+#include <QAudioOutput>
+#include <QDebug>
+#include <QMediaPlayer>
+#include <QUrl>
 #endif
 // ----------------------
 
@@ -23,6 +28,42 @@ AudioBridge::~AudioBridge()
         s_instance = nullptr;
     }
 }
+
+#ifndef Q_OS_ANDROID
+void AudioBridge::ensureDesktopPlayer()
+{
+    if (m_player) {
+        return;
+    }
+
+    m_player = new QMediaPlayer(this);
+    m_audioOutput = new QAudioOutput(this);
+    m_player->setAudioOutput(m_audioOutput);
+
+    connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
+        emit audioPositionChanged(int(position), int(m_player->duration()));
+    });
+    connect(m_player, &QMediaPlayer::durationChanged, this, [this](qint64 duration) {
+        emit audioPositionChanged(int(m_player->position()), int(duration));
+    });
+    // Equivalente ao OnCompletionListener do TourAudioService: avança para o
+    // passo seguinte e, no fim da playlist, deixa de mostrar "a tocar".
+    connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
+        if (status != QMediaPlayer::EndOfMedia) {
+            return;
+        }
+        if (m_currentIndex < m_playlist.size() - 1) {
+            goToNext();
+        } else {
+            emit currentTrackChanged(m_currentIndex, QString());
+        }
+    });
+    connect(m_player, &QMediaPlayer::errorOccurred, this,
+            [](QMediaPlayer::Error, const QString &errorString) {
+        qWarning() << "AudioBridge (desktop): erro de reproducao:" << errorString;
+    });
+}
+#endif
 
 AudioBridge *AudioBridge::instance()
 {
@@ -104,8 +145,17 @@ void AudioBridge::startAudio(QString url)
         jUrl
         );
 #else
-    // Fallback silencioso para Desktop
-    Q_UNUSED(url);
+    ensureDesktopPlayer();
+    m_player->stop();
+    if (url.isEmpty()) {
+        // Passo sem áudio: fica em silêncio
+        m_player->setSource(QUrl());
+        return;
+    }
+    // URLs (http/file/qrc) mantêm-se; caminhos simples viram file://
+    const QUrl source = url.contains(QStringLiteral("://")) ? QUrl(url) : QUrl::fromLocalFile(url);
+    m_player->setSource(source);
+    m_player->play();
 #endif
 }
 
@@ -123,6 +173,10 @@ void AudioBridge::stopAudio()
         "(Landroid/content/Context;)V",
         context
         );
+#else
+    if (m_player) {
+        m_player->stop();
+    }
 #endif
 }
 
@@ -156,6 +210,10 @@ void AudioBridge::pauseAudio()
         "(Landroid/content/Context;)V",
         context.object()
         );
+#else
+    if (m_player) {
+        m_player->pause();
+    }
 #endif
 }
 
@@ -169,6 +227,10 @@ void AudioBridge::resumeAudio()
         "(Landroid/content/Context;)V",
         context.object()
         );
+#else
+    if (m_player) {
+        m_player->play();
+    }
 #endif
 }
 
@@ -188,8 +250,9 @@ void AudioBridge::seekTo(int msec)
         msec
         );
 #else
-    // Fallback silencioso para Desktop
-    Q_UNUSED(msec);
+    if (m_player) {
+        m_player->setPosition(msec);
+    }
 #endif
 }
 

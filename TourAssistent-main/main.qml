@@ -14,7 +14,7 @@ ApplicationWindow  {
     height: 700
     title: "Museum Mate"
     onClosing: function(close) {
-            if (gameLoader.active && gameLoader.item && typeof gameLoader.item.handleBack === "function") {
+            if (ga\meLoader.active && gameLoader.item && typeof gameLoader.item.handleBack === "function") {
                 if (gameLoader.item.handleBack()) {
                     close.accepted = false
                     return

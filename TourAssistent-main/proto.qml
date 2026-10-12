@@ -173,7 +173,7 @@ populate[dictionaries]=true
 PASSOS PARA adb:
 1- cd C:\Users\guilh\AppData\Local\Android\Sdk\platform-tools
 2- ./adb tcpip 5555
-3- ./adb connect 192.168.1.72:5555
+3- ./adb connect 10.38.65.61:5555
 
 Coisas a fazer pequenas
     -Controlar progressBall;

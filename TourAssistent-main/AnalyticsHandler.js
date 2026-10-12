@@ -5,7 +5,7 @@
 // seguindo o mesmo padrão já usado por AssistantHandler.js para o baseUrl.
 .import "ApiHandler.js" as Api
 
-//var baseUrl = "http://10.211.93.27:1337"    // ANDROID ESTAGIO
+//var baseUrl = "http://10.105.216.27:1337"    // ANDROID ESTAGIO
 var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
 /**
  * Abre a BD local e garante que as tabelas de cache e configurações existem

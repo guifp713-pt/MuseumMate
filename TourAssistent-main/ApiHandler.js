@@ -2,7 +2,7 @@
 
 var cache = {}
 var baseUrl = "http://192.168.1.72:1337" // ANDROID CASA
-//var baseUrl = "http://10.211.93.27:1337" // ANDROID ESTAGIO
+//var baseUrl = "http://10.105.216.27:1337" // ANDROID ESTAGIO
 //var baseUrl = "http://192.168.5.175:1337/" // DESKTOP
 
 //var ACTIVE_ENTITY_DOCUMENT_ID = "gqag59gr2pvu95qawb4dq1ol"  //Industria Textil Norte
